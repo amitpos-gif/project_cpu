@@ -1,0 +1,16 @@
+DEPTH = 2048;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+CONTENT
+BEGIN
+0 : 06400113;  -- addi x2,x0,100
+1 : 00700193;  -- addi x3,x0,7
+2 : 02315233;  -- divu x4,x2,x3 ->14
+3 : 023172B3;  -- remu x5,x2,x3 ->2
+4 : 02310333;  -- mul x6,x2,x3 ->700
+5 : 02A00393;  -- addi x7,x0,42
+6 : 06300413;  -- addi x8,x0,99
+7 : 00000013;  -- nop
+[8..7FF] : 00000013;
+END;
