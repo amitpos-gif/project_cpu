@@ -31,22 +31,27 @@ package aux_package is
 			clk_i							:IN	STD_LOGIC;
 			--#FinalProject Divider: fast divider clock
 			divclk_i					:IN	STD_LOGIC;
+			-- #MCU integration: external Bus Interface Logic's read data,
+			-- used for any address outside the DTCM's own range
+			dtcm_data_rd_i		:IN	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 
 			--Outputs (used also for Signal-Tap auxiliary pins)
 			pc_o							:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 			instruction_o			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			
+
 			RegWrite_ctrl_o		:OUT 	STD_LOGIC;
 			MemWrite_ctrl_o		:OUT 	STD_LOGIC;
+			-- #MCU integration: forwarded from CONTROL (was internal-only)
+			MemRead_ctrl_o		:OUT 	STD_LOGIC;
 			Branch_ctrl_o			:OUT 	STD_LOGIC;
-			
+
 			read_data1_o 			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			read_data2_o 			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			write_data_o			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			
-			alu_res_o 				:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);															
-			brTaken_o					:OUT 	STD_LOGIC; 
-			
+
+			alu_res_o 				:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			brTaken_o					:OUT 	STD_LOGIC;
+
 			dtcm_addr_o				:OUT 	STD_LOGIC_VECTOR(DTCM_ADDR_WIDTH-1 DOWNTO 0);
 			dtcm_data_wr_o		:OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			dtcm_data_rd_o		:OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
