@@ -61,7 +61,6 @@ architecture structural of mcu_top is
         );
     end component;
 
-<<<<<<< HEAD
     component pushbutton_peripheral is
         port (
             smclk     : in    std_logic;
@@ -76,8 +75,6 @@ architecture structural of mcu_top is
         );
     end component;
 
-=======
->>>>>>> 4b6eec9a169cc99dae72af4434acf67429d7a2ed
     -- Signals tapped for the (stub) BUS Interface Logic
     signal alu_res_w      : std_logic_vector(31 downto 0);
     signal dtcm_data_wr_w : std_logic_vector(31 downto 0);
