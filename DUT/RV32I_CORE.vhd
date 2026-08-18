@@ -29,18 +29,14 @@ ENTITY RV32I_CORE IS
 		rst_i		 					:IN	STD_LOGIC;
 		clk_i							:IN	STD_LOGIC;
 		divclk_i					:IN	STD_LOGIC;
-		-- #MCU integration: external Bus Interface Logic supplies peripheral
-		-- read data here (used for any address outside the DTCM's own range)
 		dtcm_data_rd_i		:IN	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
+		
 		--Outputs (used also for Signal-Tap auxiliary pins)
 		pc_o							:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 		instruction_o			:OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
+		
 		RegWrite_ctrl_o		:OUT 	STD_LOGIC;
 		MemWrite_ctrl_o		:OUT 	STD_LOGIC;
-		-- #MCU integration: was internal-only (mem_read_w); now forwarded so
-		-- a peripheral bus can tell when a load is targeting it
 		MemRead_ctrl_o		:OUT 	STD_LOGIC;
 		Branch_ctrl_o			:OUT 	STD_LOGIC;
 		
@@ -100,16 +96,12 @@ ARCHITECTURE structure OF RV32I_CORE IS
 	SIGNAL quotient_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL remainder_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL div_busy_w			: STD_LOGIC;
-	SIGNAL div_busy_sync_q	: STD_LOGIC;
 	SIGNAL div_stall_w		: STD_LOGIC;
 	SIGNAL div_stage_q			: STD_LOGIC_VECTOR(2 DOWNTO 0);
 	SIGNAL div_rst_q			: STD_LOGIC;
 	SIGNAL div_ena_q			: STD_LOGIC;
 	SIGNAL accelerator_res_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL execution_res_w		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	-- #MCU integration: DTCM-vs-IO routing. is_io_addr_w uses alu_res_w
-	-- (the full, un-truncated address) since dtcm_addr_w only keeps
-	-- MA_WIDTH-1 downto 2 and would silently drop this bit.
 	SIGNAL is_io_addr_w		: STD_LOGIC;
 	SIGNAL dtcm_write_w		: STD_LOGIC;
 	SIGNAL wb_dtcm_data_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
@@ -201,7 +193,7 @@ BEGIN
 	PORT MAP ( 	
 		--Inputs
 		instruction_i 		=> instruction_w,
-		DIVbusy_ctrl_i		=> div_busy_sync_q,
+		DIVbusy_ctrl_i		=> div_busy_w,
 		
 		--Outputs
 		RegDst_ctrl_o			=> reg_dst_w,
@@ -277,13 +269,10 @@ BEGIN
 	PORT MAP(
 		read_data1_i => read_data1_w,
 		read_data2_i => read_data2_w,
-		divbusy_i    => div_busy_w,
-		mclk_i       => mclk_w,
 		divclk_i     => divclk_i,
 		rst_i        => rst_i,
 		ain_o        => div_ain_w,
-		bin_o        => div_bin_w,
-		divbusy_o    => div_busy_sync_q
+		bin_o        => div_bin_w
 	);
 
 	-- Five-stage divider controller in the CPU clock domain:
@@ -305,12 +294,12 @@ BEGIN
 					div_stage_q <= DIV_START_BUSY_C;
 
 				WHEN DIV_START_BUSY_C =>
-					IF div_busy_sync_q = '1' THEN
+					IF div_busy_w = '1' THEN
 						div_stage_q <= DIV_WAIT_DONE_C;
 					END IF;
 
 				WHEN DIV_WAIT_DONE_C =>
-					IF div_busy_sync_q = '0' THEN
+					IF div_busy_w = '0' THEN
 						div_stage_q <= DIV_COMPLETE_C;
 					END IF;
 
@@ -350,44 +339,37 @@ BEGIN
 	--=======================================
 	-- DTCM module connection
 	--=======================================
-	G1:
+	G1: 
 	if (WORD_GRANULARITY = True) generate -- i.e. each WORD has a unike address
 		dtcm_addr_w	<= alu_res_w(MA_WIDTH-1 DOWNTO 2); -- increment memory address by 4;
 	elsif (WORD_GRANULARITY = False) generate -- i.e. each BYTE has a unike address
 		dtcm_addr_w	<= alu_res_w(MA_WIDTH-1 DOWNTO 0);
 	end generate;
 
-	-- #MCU integration: bit MA_WIDTH of the full ALU address is the
-	-- DTCM-vs-IO discriminator (Figure 2: DTCM is byte 0x0000-0x1FFC,
-	-- I/O is byte 0x2000-0x3FFC - exactly one bit apart at this width).
-	-- Suppressing the internal DTCM write here stops an I/O store (e.g.
-	-- sw to PORT_LEDR) from also aliasing onto a low DTCM word address.
-	is_io_addr_w  <= alu_res_w(MA_WIDTH);
-	dtcm_write_w  <= mem_write_w AND NOT is_io_addr_w;
-
-	-- #MCU integration: for a load, use the external Bus Interface Logic's
-	-- data for I/O addresses instead of the internal DTCM's (meaningless,
-	-- aliased-address) read result.
+	-- Address bit MA_WIDTH selects the peripheral region. An I/O store must
+	-- not alias into DTCM, and an I/O load returns the external bus data.
+	is_io_addr_w   <= alu_res_w(MA_WIDTH);
+	dtcm_write_w   <= mem_write_w AND NOT is_io_addr_w;
 	wb_dtcm_data_w <= dtcm_data_rd_i WHEN is_io_addr_w = '1' ELSE dtcm_data_rd_w;
-
+	
 	MEM:  dmemory
 	generic map(
-		DATA_BUS_WIDTH		=> 	DATA_BUS_WIDTH,
+		DATA_BUS_WIDTH		=> 	DATA_BUS_WIDTH, 
 		DTCM_ADDR_WIDTH		=> 	DTCM_ADDR_WIDTH,
 		WORDS_NUM					=>	DATA_WORDS_NUM
 	)
-	PORT MAP (
+	PORT MAP (	
 		--Inputs
-		clk_i 						=> mclk_w,
+		clk_i 						=> mclk_w,  
 		rst_i 						=> rst_i,
 		dtcm_addr_i 			=> dtcm_addr_w,
 		dtcm_data_wr_i 		=> read_data2_w,
-		MemRead_ctrl_i 		=> mem_read_w,
+		MemRead_ctrl_i 		=> mem_read_w, 
 		MemWrite_ctrl_i 	=> dtcm_write_w,
-
+				
 		--Outputs
-		dtcm_data_rd_o 		=> dtcm_data_rd_w
-	);
+		dtcm_data_rd_o 		=> dtcm_data_rd_w 
+	);	
 	
 	--=======================================
 	-- MCLK counter register connection
@@ -408,7 +390,7 @@ BEGIN
 	
 	RegWrite_ctrl_o 	<= 	reg_write_w;																-- CONTROL output
   MemWrite_ctrl_o 	<= 	mem_write_w;																-- CONTROL output
-	MemRead_ctrl_o 		<= 	mem_read_w;																	-- CONTROL output
+	MemRead_ctrl_o 		<= 	mem_read_w;																-- CONTROL output
 	Branch_ctrl_o 		<= 	branch_w;																		-- CONTROL output
 	  
   read_data1_o 			<= 	read_data1_w;																-- IDECODE output
@@ -422,13 +404,13 @@ BEGIN
 	write_data_o <= ZEROS_DBUS2PCADDR & pc_plus4_w WHEN reg_dst_w = '1' ELSE
 					  wb_dtcm_data_w                  WHEN MemtoReg_w = '1' ELSE
 					  execution_res_w;
-
-  alu_res_o 				<= 	alu_res_w;																	-- EXECUTE output
+												
+  alu_res_o 				<= 	alu_res_w;																	-- EXECUTE output			
   brTaken_o 				<= 	brTaken_w;																	-- EXECUTE output
-
+  
 	dtcm_addr_o 			<= 	dtcm_addr_w;																-- DMEMORY input
 	dtcm_data_wr_o 		<= 	read_data2_w;																-- DMEMORY input
-	dtcm_data_rd_o		<=	wb_dtcm_data_w;															-- DMEMORY output (muxed with external I/O read data)
+	dtcm_data_rd_o		<=	wb_dtcm_data_w;															-- DTCM/peripheral read data
 	
 	mclk_cnt_o				<=	mclk_cnt_q;																	-- TOP output
 	
