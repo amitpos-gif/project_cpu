@@ -2,9 +2,8 @@
 -- Copyright 2026 Hananya Ribo
 -- Advanced CPU Architecture and Hardware Accelerators Lab 361-1-4693 BGU
 --
--- Divider clock-domain synchronizer based on Figure 10b.
--- The operands cross from MCLK to DIVCLK, and DIVBUSY crosses back from
--- DIVCLK to MCLK. Every crossing uses two cascaded D flip-flops.
+-- Operand clock-domain synchronizer based on Figure 10b.
+-- The operands cross from the low-frequency CPU domain into DIVCLK.
 --============================================================================
 LIBRARY IEEE;
 USE IEEE.STD_LOGIC_1164.ALL;
@@ -18,15 +17,12 @@ ENTITY sync IS
 		-- Inputs from the CPU/MCLK domain
 		read_data1_i	: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		read_data2_i	: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		divbusy_i		: IN  STD_LOGIC;
-		mclk_i			: IN  STD_LOGIC;
 		divclk_i		: IN  STD_LOGIC;
 		rst_i			: IN  STD_LOGIC;
 
 		-- Stable outputs in the DIVCLK domain
 		ain_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		bin_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		divbusy_o		: OUT STD_LOGIC
+		bin_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)
 	);
 END sync;
 
@@ -39,10 +35,6 @@ ARCHITECTURE behavior OF sync IS
 	-- Second DFF stage: stable values used by the divider.
 	SIGNAL ain_sync_q			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL bin_sync_q			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-
-	-- DIVBUSY crosses in the opposite direction, into the MCLK domain.
-	SIGNAL divbusy_meta_q		: STD_LOGIC;
-	SIGNAL divbusy_sync_q		: STD_LOGIC;
 
 BEGIN
 	PROCESS(divclk_i, rst_i)
@@ -64,19 +56,7 @@ BEGIN
 		END IF;
 	END PROCESS;
 
-	PROCESS(mclk_i, rst_i)
-	BEGIN
-		IF rst_i = '1' THEN
-			divbusy_meta_q <= '0';
-			divbusy_sync_q <= '0';
-		ELSIF rising_edge(mclk_i) THEN
-			divbusy_meta_q <= divbusy_i;
-			divbusy_sync_q <= divbusy_meta_q;
-		END IF;
-	END PROCESS;
-
 	ain_o <= ain_sync_q;
 	bin_o <= bin_sync_q;
-	divbusy_o <= divbusy_sync_q;
 
 END behavior;
