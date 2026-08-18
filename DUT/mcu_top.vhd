@@ -1,33 +1,4 @@
--------------------------------------------------------------------------------
--- mcu_top.vhd
---
--- Top-level MCU (Figure 1 shape): wires RV32I_CORE (RISC-V core) and
--- gpio_peripherals (Peripherals, Table 5) together through a "BUS Interface
--- Logic" stub. Built WITHOUT the KEY[3-1] peripheral for now, per request.
---
--- RV32I_CORE.vhd was extended (with permission) to support this:
---   - MemRead_ctrl_o forwards the core's internal mem_read_w (CONTROL's
---     MemRead_ctrl_o = ld_w) out to the entity boundary, so this file can
---     enable gpio_peripherals' PORT_SW tri-state read at the right time.
---   - dtcm_data_rd_i lets this file feed peripheral read data back into the
---     core's write-back path; the core muxes it in (wb_dtcm_data_w) for any
---     address with bit MA_WIDTH set (the DTCM-vs-IO discriminator, see
---     Figure 2), instead of its own internal DTCM's read result.
---   - The core now gates its OWN internal DTCM write with NOT is_io_addr_w,
---     so a store to a peripheral address (e.g. PORT_LEDR @ 0x2000) no
---     longer also aliases onto and corrupts a low DTCM word address.
---
--- The shared Data bus itself - the "Click Me: Bi-directional Data BUS
--- (reminder)" annotation on Figure 1 - is built from BidirPin.vhd, the
--- course's own reusable inout-pin component ("Bi-directional BUS" slides):
--- Din <= IOpin always, IOpin <= Dout when en='1' else 'Z'. Address/data
--- width is otherwise reduced to gpio_peripherals' 8-bit peripheral bus
--- (Figure 5).
---
--- Write timing: MemWrite is passed to the peripherals RAW. The write-strobe
--- qualification that stops the transparent D-latches from capturing address
--- glitches lives inside gpio_peripherals, driven by the smclk peripheral
--- clock (Figure 1's Clock Tree) - see the smclk port comment there.
+
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
