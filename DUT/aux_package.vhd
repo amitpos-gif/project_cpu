@@ -286,5 +286,51 @@ END component;
 		);
 	end component;
 ---------------------------------------------------------
-
+	component digit_circ is
+		GENERIC (n : INTEGER := 16);
+		PORT (
+			y_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			x_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			timer_i       : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			ena_i         : IN  STD_LOGIC;
+			clk_i         : IN  std_logic;
+			pwm_mode_i    : IN  std_logic_vector(1 downto 0);
+			pwm_out       : OUT std_logic;
+			equy_out      : OUT std_logic;
+			equx_out      : OUT std_logic
+		);
+	end component ;
+---------------------------------------------------------
+	component bit_Timer is
+    generic (
+        n : integer := 32
+    );
+    port (
+        clk       : in  std_logic;
+        rst       : in  std_logic;
+        ena       : in  std_logic;
+        EQUY      : in std_logic;
+        timer_val : out std_logic_vector(n-1 downto 0)
+    );
+	end component ;	
+---------------------------------------------------------
+	component OUTPUT_UNIT is
+      GENERIC (n : INTEGER := 32
+	); 
+  PORT 
+  (  
+	      y_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+          x_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+		  timer_i       : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+          ena_i         : in  STD_LOGIC;
+          clk_i         : in  std_logic;
+          pwm_mode_i    : in  std_logic;
+          pwm_out       : out std_logic;
+          equy_out      : out std_logic;
+          equx_out      : out std_logic
+          
+            
+  ); 
+	END component;
+	
 end aux_package;
