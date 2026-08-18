@@ -8,12 +8,9 @@ entity mcu_system is
     port (
         CLOCK_50 : in  std_logic;                     -- 50 MHz board oscillator
         KEY0     : in  std_logic;                     -- system RESET, active low
-<<<<<<< HEAD
         KEY1     : in  std_logic;
         KEY2     : in  std_logic;
         KEY3     : in  std_logic;
-=======
->>>>>>> 4b6eec9a169cc99dae72af4434acf67429d7a2ed
 
         SW       : in  std_logic_vector(7 downto 0);  -- SW7-SW0
         LEDR     : out std_logic_vector(7 downto 0);  -- LEDR7-LEDR0
@@ -45,12 +42,9 @@ architecture structural of mcu_system is
             clk_i    : in  std_logic;
             divclk_i : in  std_logic;
             smclk    : in  std_logic;
-<<<<<<< HEAD
             KEY1     : in  std_logic;
             KEY2     : in  std_logic;
             KEY3     : in  std_logic;
-=======
->>>>>>> 4b6eec9a169cc99dae72af4434acf67429d7a2ed
             SW       : in  std_logic_vector(7 downto 0);
             LEDR     : out std_logic_vector(7 downto 0);
             HEX0     : out std_logic_vector(6 downto 0);
@@ -101,12 +95,9 @@ begin
             clk_i    => mclk_w,
             divclk_i => accelclk_w,
             smclk    => smclk_w,
-<<<<<<< HEAD
             KEY1     => KEY1,
             KEY2     => KEY2,
             KEY3     => KEY3,
-=======
->>>>>>> 4b6eec9a169cc99dae72af4434acf67429d7a2ed
             SW       => SW,
             LEDR     => LEDR,
             HEX0     => HEX0,
