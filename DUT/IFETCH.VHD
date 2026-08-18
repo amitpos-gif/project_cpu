@@ -62,7 +62,7 @@ BEGIN
 		lpm_hint 								=> "ENABLE_RUNTIME_MOD = YES,INSTANCE_NAME = ITCM",
 		lpm_type 								=> "altsyncram",
 		outdata_reg_a 					=> "UNREGISTERED",
-		init_file => "C:\Users\amitp\OneDrive\Desktop\Comp_Lab\projcet\SIM\test1\man_compiled\bin\M9K-intel/ITCM.hex",
+		init_file 							=> "C:\Users\123\Desktop\finel_project_files\Benchmark apps\GPIO\test2\bin\M9K-intel\ITCM.hex",
 		intended_device_family	=> "Cyclone"
 	)
 	PORT MAP (
@@ -132,3 +132,4 @@ END PROCESS;
 ---------------------------------------------------------------------------------------
 	
 END behavior;
+
