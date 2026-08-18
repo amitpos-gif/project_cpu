@@ -21,4 +21,7 @@ package gpio_pkg is
     constant PORT_HEX5_ADDR : natural := 16#200D#;  -- GPO
     constant PORT_SW_ADDR   : natural := 16#2010#;  -- SW7-SW0, GPI
 
+    -- Page 6: memory-mapped peripheral with interrupt capability
+    constant PORT_PB_ADDR   : natural := 16#2014#;  -- KEY3-KEY1, GPI
+
 end package gpio_pkg;

@@ -1,0 +1,15 @@
+# Clock constraints for RV32I_CORE Fmax analysis.
+# TimeQuest reports MCLK and DIVCLK independently.
+
+# The period is an analysis target. Fmax Summary reports the achievable Fmax.
+create_clock -name MCLK   -period 10.000 [get_ports {clk_i}]
+create_clock -name DIVCLK -period 10.000 [get_ports {divclk_i}]
+
+# The CPU and divider clocks are separate PLL outputs and are treated as
+# asynchronous clock domains. Their CDC paths are excluded from Fmax analysis.
+set_clock_groups -asynchronous \
+    -group [get_clocks {MCLK}] \
+    -group [get_clocks {DIVCLK}]
+
+# Reset is an asynchronous control input, not a timed data path.
+set_false_path -from [get_ports {rst_i}]

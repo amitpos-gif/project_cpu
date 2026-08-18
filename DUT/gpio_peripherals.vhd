@@ -30,13 +30,17 @@ use work.gpio_pkg.all;
 
 entity gpio_peripherals is
     port (
+        -- smclk : peripheral clock from the MCU Clock Tree (Figure 1),
+        -- routed into every GPO d_latch_byte. Each latch is transparent only
+        -- while its En is high AND smclk = '0', so the address glitches that
+        -- occur right after a rising MCLK edge cannot open the wrong
+        -- register. See the header of d_latch_byte.vhd for the full reason.
+        -- REQUIREMENT: smclk must be synchronous and in phase with the CPU's
+        -- MCLK - its low phase is what defines the safe write window.
+        smclk    : in    std_logic;
         Address  : in    std_logic_vector(ADDR_WIDTH-1 downto 0);
         Data     : inout std_logic_vector(7 downto 0);
         MemRead  : in    std_logic;
-        -- MemWrite must already be qualified with the clock phase by the
-        -- BUS Interface Logic (see mcu_top.vhd). These are transparent
-        -- D-latches, so a write strobe that is high while the address is
-        -- still settling would let a store land in the wrong register.
         MemWrite : in    std_logic;
 
         SW       : in    std_logic_vector(7 downto 0);  -- SW7-SW0
@@ -65,9 +69,10 @@ architecture structural of gpio_peripherals is
 
     component d_latch_byte is
         port (
-            D  : in  std_logic_vector(7 downto 0);
-            En : in  std_logic;
-            Q  : out std_logic_vector(7 downto 0)
+            clk : in  std_logic;
+            D   : in  std_logic_vector(7 downto 0);
+            En  : in  std_logic;
+            Q   : out std_logic_vector(7 downto 0)
         );
     end component;
 
@@ -125,18 +130,18 @@ begin
     ----------------------------------------------------------------
     -- PORT_LEDR (0x2000)
     ----------------------------------------------------------------
-    u_ledr : d_latch_byte port map (D => Data, En => En_LEDR, Q => Q_LEDR);
+    u_ledr : d_latch_byte port map (clk => smclk, D => Data, En => En_LEDR, Q => Q_LEDR);
     LEDR <= Q_LEDR;
 
     ----------------------------------------------------------------
     -- PORT_HEX0..PORT_HEX5 (0x2004-0x200D): D-latch -> 7-seg encoder
     ----------------------------------------------------------------
-    u_hex0 : d_latch_byte port map (D => Data, En => En_HEX0, Q => Q_HEX0);
-    u_hex1 : d_latch_byte port map (D => Data, En => En_HEX1, Q => Q_HEX1);
-    u_hex2 : d_latch_byte port map (D => Data, En => En_HEX2, Q => Q_HEX2);
-    u_hex3 : d_latch_byte port map (D => Data, En => En_HEX3, Q => Q_HEX3);
-    u_hex4 : d_latch_byte port map (D => Data, En => En_HEX4, Q => Q_HEX4);
-    u_hex5 : d_latch_byte port map (D => Data, En => En_HEX5, Q => Q_HEX5);
+    u_hex0 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX0, Q => Q_HEX0);
+    u_hex1 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX1, Q => Q_HEX1);
+    u_hex2 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX2, Q => Q_HEX2);
+    u_hex3 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX3, Q => Q_HEX3);
+    u_hex4 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX4, Q => Q_HEX4);
+    u_hex5 : d_latch_byte port map (clk => smclk, D => Data, En => En_HEX5, Q => Q_HEX5);
 
     u_enc0 : hex7seg_decoder port map (hex_in => Q_HEX0(3 downto 0), seg => HEX0);
     u_enc1 : hex7seg_decoder port map (hex_in => Q_HEX1(3 downto 0), seg => HEX1);
