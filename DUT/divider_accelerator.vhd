@@ -36,11 +36,14 @@ ARCHITECTURE behavior OF divider_accelerator IS
 	CONSTANT DOUBLE_WIDTH_C	: POSITIVE := 2 * DATA_BUS_WIDTH;
 
 	-- Upper half: partial remainder. Lower half: shifting dividend.
-	SIGNAL dividend_q	: UNSIGNED(DOUBLE_WIDTH_C-1 DOWNTO 0);
-	SIGNAL divisor_q		: UNSIGNED(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL quotient_q	: UNSIGNED(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL dividend_q	: UNSIGNED(DOUBLE_WIDTH_C-1 DOWNTO 0); --64 bit
+	SIGNAL divisor_q		: UNSIGNED(DATA_BUS_WIDTH-1 DOWNTO 0); --32 bit
+	SIGNAL quotient_q	: UNSIGNED(DATA_BUS_WIDTH-1 DOWNTO 0); --32 bit
 	SIGNAL count_q		: NATURAL RANGE 0 TO N-1;
 	SIGNAL busy_q		: STD_LOGIC;
+	-- DIVRST arms exactly one start. This prevents a level-held DIVENA from
+	-- restarting the completed divide before synchronized BUSY reaches MCLK.
+	SIGNAL armed_q		: STD_LOGIC;
 
 BEGIN
 	-- The supplied algorithm generates one result bit for every input bit.
@@ -62,12 +65,14 @@ BEGIN
 				quotient_q	<= (OTHERS => '0');
 				count_q			<= 0;
 				busy_q			<= '0';
+				armed_q			<= '1';
 
 			ELSIF busy_q = '0' THEN
-				IF divena_i = '1' THEN
+				IF divena_i = '1' AND armed_q = '1' THEN
 					-- Operands were loaded by DIVRST. DIVENA starts the N steps.
 					count_q			<= 0;
 					busy_q			<= '1';
+					armed_q			<= '0';
 				END IF;
 
 			ELSE

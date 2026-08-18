@@ -264,10 +264,13 @@ END component;
 		PORT(
 			read_data1_i	: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			read_data2_i	: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			divbusy_i		: IN  STD_LOGIC;
+			mclk_i			: IN  STD_LOGIC;
 			divclk_i		: IN  STD_LOGIC;
 			rst_i			: IN  STD_LOGIC;
 			ain_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			bin_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)
+			bin_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			divbusy_o		: OUT STD_LOGIC
 		);
 	end component;
 ---------------------------------------------------------

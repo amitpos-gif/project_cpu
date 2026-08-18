@@ -51,7 +51,7 @@ BEGIN
 
     -- RESULT = P0 + (M << 8) + (P3 << 16)
     mul_res_w <= (x"0000" & P0_w)
-               + (x"00" & M_w(15 DOWNTO 0) & x"00")
+               + ("0000000" & M_w & x"00")
                + (P3_w & x"0000");
 
     -- #RV32IM task: gate output with MULOp enable - zero when not a MUL instruction

@@ -100,22 +100,9 @@ ARCHITECTURE structure OF RV32I_CORE IS
 	SIGNAL quotient_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL remainder_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL div_busy_w			: STD_LOGIC;
-	SIGNAL div_busy_meta_q	: STD_LOGIC;
 	SIGNAL div_busy_sync_q	: STD_LOGIC;
-	SIGNAL div_active_q		: STD_LOGIC;
-	SIGNAL div_busy_prev_q	: STD_LOGIC;
-	SIGNAL div_done_toggle_q : STD_LOGIC;
-	SIGNAL div_done_meta_q	: STD_LOGIC;
-	SIGNAL div_done_sync_q	: STD_LOGIC;
-	SIGNAL div_start_toggle_q : STD_LOGIC;
-	SIGNAL div_complete_w	: STD_LOGIC;
 	SIGNAL div_stall_w		: STD_LOGIC;
-	SIGNAL divop_meta_q		: STD_LOGIC;
-	SIGNAL divop_sync_q		: STD_LOGIC;
-	SIGNAL div_pc_meta_q		: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-	SIGNAL div_pc_sync_q		: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-	SIGNAL div_last_pc_q		: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-	SIGNAL div_last_pc_valid_q : STD_LOGIC;
+	SIGNAL div_stage_q			: STD_LOGIC_VECTOR(2 DOWNTO 0);
 	SIGNAL div_rst_q			: STD_LOGIC;
 	SIGNAL div_ena_q			: STD_LOGIC;
 	SIGNAL accelerator_res_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
@@ -126,6 +113,12 @@ ARCHITECTURE structure OF RV32I_CORE IS
 	SIGNAL is_io_addr_w		: STD_LOGIC;
 	SIGNAL dtcm_write_w		: STD_LOGIC;
 	SIGNAL wb_dtcm_data_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+
+	CONSTANT DIV_IDLE_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "000";
+	CONSTANT DIV_LOAD_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "001";
+	CONSTANT DIV_START_BUSY_C	: STD_LOGIC_VECTOR(2 DOWNTO 0) := "010";
+	CONSTANT DIV_WAIT_DONE_C	: STD_LOGIC_VECTOR(2 DOWNTO 0) := "011";
+	CONSTANT DIV_COMPLETE_C		: STD_LOGIC_VECTOR(2 DOWNTO 0) := "100";
 
 BEGIN
 	
@@ -230,15 +223,9 @@ BEGIN
 		WBSrc1_ctrl_o		=> wb_src1_w
 	);
 
-	-- A completion toggle cannot be missed even when the DIVBUSY pulse is
-	-- shorter than one MCLK period. Each division captures the current toggle
-	-- value and completes when the synchronized value changes.
-	div_complete_w <= '1' WHEN div_active_q = '1' AND
-								 div_done_sync_q /= div_start_toggle_q ELSE '0';
-	div_stall_w <= div_op_w AND NOT div_complete_w;
-
-	-- CONTROL still receives DIVBUSY directly. These two gates cover only the
-	-- initial synchronization delay before DIVBUSY reaches CONTROL.
+	-- Stall immediately on decode and keep the instruction until the complete
+	-- stage. This covers the delay before synchronized DIVBUSY becomes high.
+	div_stall_w <= '0' WHEN div_stage_q = DIV_COMPLETE_C ELSE div_op_w;
 	pc_hold_w  <= pc_hold_ctrl_w OR div_stall_w;
 	reg_write_w <= reg_write_ctrl_w AND NOT div_stall_w;
 	--=======================================
@@ -290,51 +277,56 @@ BEGIN
 	PORT MAP(
 		read_data1_i => read_data1_w,
 		read_data2_i => read_data2_w,
+		divbusy_i    => div_busy_w,
+		mclk_i       => mclk_w,
 		divclk_i     => divclk_i,
 		rst_i        => rst_i,
 		ain_o        => div_ain_w,
-		bin_o        => div_bin_w
+		bin_o        => div_bin_w,
+		divbusy_o    => div_busy_sync_q
 	);
 
-	-- Synchronize the divide request and PC into the DIVCLK domain. The PC is
-	-- remembered so consecutive divide instructions at different addresses each
-	-- generate exactly one initialization/start sequence.
-	--They aren’t special wire types—just ordinary signals/registers whose names 
-	--indicate that they are the first stage of a two-flip-flop synchronizer
-	PROCESS(divclk_i, rst_i)
+	-- Five-stage divider controller in the CPU clock domain:
+	-- idle, load/reset, start+wait-busy, wait-done, complete/write-back.
+	-- DIVRST and DIVENA are held for complete MCLK stages, so the faster DIVCLK
+	-- samples them safely. DIVENA and waiting for BUSY high share one stage.
+	PROCESS(mclk_w, rst_i)
 	BEGIN
 		IF rst_i = '1' THEN
-			divop_meta_q			<= '0';
-			divop_sync_q			<= '0';
-			div_pc_meta_q			<= (OTHERS => '0');
-			div_pc_sync_q			<= (OTHERS => '0');
-			div_last_pc_q			<= (OTHERS => '0');
-			div_last_pc_valid_q	<= '0';
-			div_rst_q				<= '1';
-			div_ena_q				<= '0';
-		ELSIF rising_edge(divclk_i) THEN
-			divop_meta_q	<= div_op_w;
-			divop_sync_q	<= divop_meta_q;
-			div_pc_meta_q	<= pc_w;
-			div_pc_sync_q	<= div_pc_meta_q;
+			div_stage_q <= DIV_IDLE_C;
+		ELSIF rising_edge(mclk_w) THEN
+			CASE div_stage_q IS
+				WHEN DIV_IDLE_C =>
+					IF div_op_w = '1' THEN
+						div_stage_q <= DIV_LOAD_C;
+					END IF;
 
-			-- Default values make DIVRST and DIVENA one-DIVCLK control pulses.
-			div_rst_q <= '0';
-			div_ena_q <= '0';
+				WHEN DIV_LOAD_C =>
+					div_stage_q <= DIV_START_BUSY_C;
 
-			IF divop_sync_q = '0' THEN
-				div_last_pc_valid_q <= '0';
-			ELSIF div_last_pc_valid_q = '0' OR div_pc_sync_q /= div_last_pc_q THEN
-				-- First pulse initializes/loads the divider.
-				div_rst_q				<= '1';
-				div_last_pc_q			<= div_pc_sync_q;
-				div_last_pc_valid_q	<= '1';
-			ELSIF div_rst_q = '1' THEN
-				-- The following pulse starts the 32 DIVCLK iterations.
-				div_ena_q <= '1';
-			END IF;
+				WHEN DIV_START_BUSY_C =>
+					IF div_busy_sync_q = '1' THEN
+						div_stage_q <= DIV_WAIT_DONE_C;
+					END IF;
+
+				WHEN DIV_WAIT_DONE_C =>
+					IF div_busy_sync_q = '0' THEN
+						div_stage_q <= DIV_COMPLETE_C;
+					END IF;
+
+				WHEN DIV_COMPLETE_C =>
+					div_stage_q <= DIV_IDLE_C;
+
+				WHEN OTHERS =>
+					div_stage_q <= DIV_IDLE_C;
+			END CASE;
 		END IF;
 	END PROCESS;
+
+	-- Synchronous divider load/start controls. Global reset also asserts
+	-- DIVRST so the divider's internal registers are initialized at power-up.
+	div_rst_q <= '1' WHEN rst_i = '1' OR div_stage_q = DIV_LOAD_C ELSE '0';
+	div_ena_q <= '1' WHEN div_stage_q = DIV_START_BUSY_C ELSE '0';
 
 	--=======================================
 	-- Unsigned multicycle divider (Figure 9)
@@ -355,56 +347,6 @@ BEGIN
 		divbusy_o  => div_busy_w
 	);
 
-	-- Convert the end of the DIVBUSY pulse into a persistent event. The toggle
-	-- changes once per completed operation and remains changed until the MCLK
-	-- domain has had enough time to synchronize it.
-	PROCESS(divclk_i, rst_i)
-	BEGIN
-		IF rst_i = '1' THEN
-			div_busy_prev_q   <= '0';
-			div_done_toggle_q <= '0';
-		ELSIF rising_edge(divclk_i) THEN
-			div_busy_prev_q <= div_busy_w;
-			IF div_busy_prev_q = '1' AND div_busy_w = '0' THEN
-				div_done_toggle_q <= NOT div_done_toggle_q;
-			END IF;
-		END IF;
-	END PROCESS;
-
-	-- Synchronize both the BUSY level and the persistent completion toggle into
-	-- the CPU clock domain. CONTROL receives only synchronized DIVBUSY.
-	PROCESS(mclk_w, rst_i)
-	BEGIN
-		IF rst_i = '1' THEN
-			div_busy_meta_q <= '0';
-			div_busy_sync_q <= '0';
-			div_done_meta_q <= '0';
-			div_done_sync_q <= '0';
-		ELSIF rising_edge(mclk_w) THEN
-			div_busy_meta_q <= div_busy_w;
-			div_busy_sync_q <= div_busy_meta_q;
-			div_done_meta_q <= div_done_toggle_q;
-			div_done_sync_q <= div_done_meta_q;
-		END IF;
-	END PROCESS;
-
-	-- CPU-clock-domain state for the completion-toggle handshake.
-	PROCESS(mclk_w, rst_i)
-	BEGIN
-		IF rst_i = '1' THEN
-			div_active_q       <= '0';
-			div_start_toggle_q <= '0';
-		ELSIF rising_edge(mclk_w) THEN
-			IF div_active_q = '0' THEN
-				IF div_op_w = '1' THEN
-					div_active_q       <= '1';
-					div_start_toggle_q <= div_done_sync_q;
-				END IF;
-			ELSIF div_complete_w = '1' THEN
-				div_active_q <= '0';
-			END IF;
-		END IF;
-	END PROCESS;
 	--=======================================
 	-- DTCM module connection
 	--=======================================

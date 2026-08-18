@@ -141,7 +141,7 @@ BEGIN
 	divop_w	<=	divu_w OR remu_w;
 
 	reg_write_base_w	<= Rtype_w OR Itype_w OR Utype_w OR UJtype_w;
-	-- A divide may write only when the accelerator is no longer busy.
+	-- A divide may write only when the accelerator is no longer busy. 
 	RegWrite_ctrl_o 	<= reg_write_base_w AND NOT (divop_w AND DIVbusy_ctrl_i);
 	MemtoReg_ctrl_o 	<=  ld_w;
 	MemWrite_ctrl_o 	<=  st_w; 

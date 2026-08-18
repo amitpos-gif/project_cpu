@@ -46,7 +46,7 @@ BEGIN
 		lpm_hint 								=> "ENABLE_RUNTIME_MOD = YES,INSTANCE_NAME = DTCM",
 		lpm_type 								=> "altsyncram",
 		outdata_reg_a 					=> "UNREGISTERED",
-		init_file 							=> "C:\Users\123\Desktop\finel_project_files\Benchmark apps\GPIO\test0\bin\M9K-intel\DTCM.hex",
+		init_file => "C:\Users\amitp\OneDrive\Desktop\Comp_Lab\projcet\SIM\test1\man_compiled\bin\M9K-intel/DTCM.hex",
 		intended_device_family 	=> "Cyclone"
 	)
 	PORT MAP (
@@ -60,4 +60,3 @@ BEGIN
 	wrclk_w <= NOT clk_i;	-- Load memory address register with write clock
 	
 END behavior;
-
