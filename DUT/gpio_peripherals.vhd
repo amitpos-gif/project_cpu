@@ -27,6 +27,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use work.gpio_pkg.all;
+use work.aux_package.all;
 
 entity gpio_peripherals is
     port (
@@ -55,41 +56,6 @@ entity gpio_peripherals is
 end entity gpio_peripherals;
 
 architecture structural of gpio_peripherals is
-
-    component addr_decoder_gpio is
-        port (
-            Address  : in  std_logic_vector(ADDR_WIDTH-1 downto 0);
-            CS_LEDR  : out std_logic;
-            CS_HEX01 : out std_logic;
-            CS_HEX23 : out std_logic;
-            CS_HEX45 : out std_logic;
-            CS_SW    : out std_logic
-        );
-    end component;
-
-    component d_latch_byte is
-        port (
-            clk : in  std_logic;
-            D   : in  std_logic_vector(7 downto 0);
-            En  : in  std_logic;
-            Q   : out std_logic_vector(7 downto 0)
-        );
-    end component;
-
-    component tristate_byte is
-        port (
-            D  : in  std_logic_vector(7 downto 0);
-            OE : in  std_logic;
-            Y  : out std_logic_vector(7 downto 0)
-        );
-    end component;
-
-    component hex7seg_decoder is
-        port (
-            hex_in : in  std_logic_vector(3 downto 0);
-            seg    : out std_logic_vector(6 downto 0)
-        );
-    end component;
 
     signal CS_LEDR, CS_HEX01, CS_HEX23, CS_HEX45, CS_SW : std_logic;
 

@@ -1,172 +1,200 @@
---------------------------------------------------------------------
-library ieee;
-use ieee.std_logic_1164.all;
-use work.aux_package.all;
+-------------------------------------------------------------------------------
+-- basic_timer.vhd
+--
+-- Basic Timer wrapper based on Figures 7 and 8.  This file instantiates the
+-- supplied bit_Timer counter core and adds the documented control, compare,
+-- capture and PWM structures.  The memory-address decoder is intentionally
+-- left outside this unit; one-cycle write enables load the mapped registers.
+--
+-- BTCTL1 layout:
+--   bit 7     BTOUTMD
+--   bit 6     BTOUTEN
+--   bit 5     BTHOLD
+--   bits 4:3  BTSSEL
+--   bit 2     BTCLR
+--   bits 1:0  BTINT
+--
+-- BTCTL2 layout:
+--   bits 7:4  read as zero
+--   bits 3:2  CAPMD
+--   bits 1:0  CAPISEL
+-------------------------------------------------------------------------------
+LIBRARY IEEE;
+USE IEEE.STD_LOGIC_1164.ALL;
+USE IEEE.STD_LOGIC_UNSIGNED.ALL;
+USE WORK.aux_package.ALL;
 
-entity basic_timer is
-    generic (
-        n : integer := 32
+ENTITY basic_timer IS
+    GENERIC (
+        N : INTEGER := 32
     );
-    port (
-        -- Compare values (from the BTCMPRx registers, outside this box)
-        BTCMPR0  : in  std_logic_vector(n-1 downto 0);  --will go to latch BTCL0
-        BTCMPR1  : in  std_logic_vector(n-1 downto 0);  --will go to latch BTCL1
+    PORT (
+        smclk_i       : IN  STD_LOGIC;
+        rst_i         : IN  STD_LOGIC;
 
-        -- Control bits (from BTCTL1 / BTCTL2, outside this box)
-        BTCLR    : in  std_logic;                       -- Clear timer
-        BTHOLD   : in  std_logic;                       -- Hold timer
-        BTSSEL   : in  std_logic_vector(1 downto 0);    -- Clock selection
+        -- One-SMCLK-cycle register write enables from a future address decoder.
+        BTCTL1_we_i   : IN  STD_LOGIC;
+        BTCTL2_we_i   : IN  STD_LOGIC;
+        BTCMPR0_we_i  : IN  STD_LOGIC;
+        BTCMPR1_we_i  : IN  STD_LOGIC;
+        reg_data_i    : IN  STD_LOGIC_VECTOR(N-1 DOWNTO 0);
 
-        BTOUTMD  : in  std_logic;  -- for the output unit
-        BTOUTEN  : in  std_logic;  -- for the output unit
+        -- External capture sources.
+        CAPIN1_i      : IN  STD_LOGIC;
+        CAPIN2_i      : IN  STD_LOGIC;
 
-        BTINT    : in  std_logic_vector(1 downto 0);
-        CAPISEL  : in  std_logic_vector(1 downto 0);
-        CAPMD    : in  std_logic_vector(1 downto 0);
-
-        -- Clock sources into the BTSSEL mux
-        SMCLK    : in  std_logic;
-        SMCLK_2  : in  std_logic;
-        SMCLK_4  : in  std_logic;
-        SMCLK_8  : in  std_logic;
-
-        -- Capture inputs
-        CAPIN1   : in  std_logic;
-        CAPIN2   : in  std_logic;
-
-        -- Outputs
-        PWM_out  : out std_logic;
-        BTIFG    : out std_logic;
-        BTCAPR   : out std_logic_vector(n-1 downto 0)
+        -- Basic Timer system outputs.
+        BTCAPR_o      : OUT STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+        BTIFG_o       : OUT STD_LOGIC;
+        PWM_o         : OUT STD_LOGIC
     );
-end entity basic_timer;
+END ENTITY basic_timer;
 
-architecture struct of basic_timer is
+ARCHITECTURE structural OF basic_timer IS
+    -- Figure 7: both compare latches are permanently enabled.
+    CONSTANT HEU0           : STD_LOGIC := '1';
 
-    signal btclk_w   : std_logic;                              -- BTSSEL mux output
-    signal cnt_en_w  : std_logic;                              -- BTCNT /EN
-    signal BTCNT_w   : std_logic_vector(n-1 downto 0);
-    signal BTCL0_q   : std_logic_vector(n-1 downto 0) := (others => '0');
-    signal BTCL1_q   : std_logic_vector(n-1 downto 0) := (others => '0');
-    signal BTCAPR_q  : std_logic_vector(n-1 downto 0) := (others => '0');
+    SIGNAL btctl1_q       : STD_LOGIC_VECTOR(7 DOWNTO 0);
+    SIGNAL btctl2_q       : STD_LOGIC_VECTOR(7 DOWNTO 0);
+    SIGNAL btcmpr0_q      : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+    SIGNAL btcmpr1_q      : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+    SIGNAL btcl0_q        : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+    SIGNAL btcl1_q        : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+    SIGNAL btcapr_q       : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
 
-    signal EUQ0_w    : std_logic;                              -- BTCNT = BTCL0
-    signal EUQ1_w    : std_logic;                              -- BTCNT = BTCL1
-    signal HEU0_w    : std_logic;                              -- BTCLx latch enable
+    SIGNAL clk_div_q      : STD_LOGIC_VECTOR(2 DOWNTO 0);
+    SIGNAL timer_clk_w    : STD_LOGIC;
+    SIGNAL timer_rst_w    : STD_LOGIC;
+    SIGNAL timer_ena_w    : STD_LOGIC;
+    SIGNAL btcnt_w        : STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+    SIGNAL equ0_w         : STD_LOGIC;
+    SIGNAL equ1_w         : STD_LOGIC;
 
-    signal cap_src_w : std_logic;                              -- CAPISEL mux output
-    signal cap_s1_q  : std_logic := '0';
-    signal cap_s2_q  : std_logic := '0';
-    signal cap_s3_q  : std_logic := '0';
-    signal cap_evt_w : std_logic;                              -- Capture Mode event
+    SIGNAL cap_input_w    : STD_LOGIC;
+    SIGNAL cap_trigger_w  : STD_LOGIC;
 
-begin
+    SIGNAL pwmout_w       : STD_LOGIC;
+BEGIN
+    ---------------------------------------------------------------------------
+    -- Memory-mapped register storage.  The internal BTCL0/BTCL1 latches are
+    -- updated automatically with their corresponding compare registers.
+    ---------------------------------------------------------------------------
+    PROCESS (smclk_i, rst_i)
+    BEGIN
+        IF rst_i = '1' THEN
+            btctl1_q  <= (OTHERS => '0');
+            btctl2_q  <= (OTHERS => '0');
+            btcmpr0_q <= (OTHERS => '0');
+            btcmpr1_q <= (OTHERS => '0');
+            btcl0_q   <= (OTHERS => '0');
+            btcl1_q   <= (OTHERS => '0');
+            clk_div_q <= (OTHERS => '0');
 
-    ----------------------------------------------------------------
-    -- BTSSEL clock mux: 00 SMCLK | 01 SMCLK:2 | 10 SMCLK:4 | 11 SMCLK:8
-    ----------------------------------------------------------------
-    with BTSSEL select btclk_w <=
-        SMCLK   when "00",
-        SMCLK_2 when "01",
-        SMCLK_4 when "10",
-        SMCLK_8 when others;
+        ELSIF rising_edge(smclk_i) THEN
+            clk_div_q <= clk_div_q + 1;
 
-    ----------------------------------------------------------------
-    -- BTCNT 32-bit Timer (Up-Mode). BTHOLD drives the active-low EN,
-    -- BTCLR clears, EUQ0 wraps it.
-    ----------------------------------------------------------------
-    cnt_en_w <= not BTHOLD;
+            IF BTCTL1_we_i = '1' THEN
+                btctl1_q <= reg_data_i(7 DOWNTO 0);
+            END IF;
 
-    BTCNT_INST : bit_Timer
-        generic map (n => n)
-        port map (
-            clk       => btclk_w,
-            rst       => BTCLR,
-            ena       => cnt_en_w,
-            EQUY      => EUQ0_w,
-            timer_val => BTCNT_w
+            IF BTCTL2_we_i = '1' THEN
+                btctl2_q <= "0000" & reg_data_i(3 DOWNTO 0);
+            END IF;
+
+            IF BTCMPR0_we_i = '1' THEN
+                btcmpr0_q <= reg_data_i;
+                IF HEU0 = '1' THEN
+                    btcl0_q <= reg_data_i;
+                END IF;
+            END IF;
+
+            IF BTCMPR1_we_i = '1' THEN
+                btcmpr1_q <= reg_data_i;
+                IF HEU0 = '1' THEN
+                    btcl1_q <= reg_data_i;
+                END IF;
+            END IF;
+        END IF;
+    END PROCESS;
+
+    ---------------------------------------------------------------------------
+    -- BTSSEL clock source selector: SMCLK, SMCLK/2, SMCLK/4 or SMCLK/8.
+    ---------------------------------------------------------------------------
+    WITH btctl1_q(4 DOWNTO 3) SELECT
+        timer_clk_w <= smclk_i      WHEN "00",
+                       clk_div_q(0) WHEN "01",
+                       clk_div_q(1) WHEN "10",
+                       clk_div_q(2) WHEN OTHERS;
+
+    timer_rst_w <= rst_i OR btctl1_q(2);   -- BTCLR
+    timer_ena_w <= NOT btctl1_q(5);        -- BTHOLD
+
+    TIMER_CORE : bit_Timer
+        GENERIC MAP (
+            n => N
+        )
+        PORT MAP (
+            clk       => timer_clk_w,
+            rst       => timer_rst_w,
+            ena       => timer_ena_w,
+            EQUY      => equ0_w,
+            timer_val => btcnt_w
         );
 
-    ----------------------------------------------------------------
-    -- Output Unit -> PWM_out. Both comparators live here: equy_out is EUQ0
-    -- (BTCNT = BTCL0) and equx_out is EUQ1 (BTCNT = BTCL1).
-    ----------------------------------------------------------------
-    
+    ---------------------------------------------------------------------------
+    -- Capture Mode: CAPISEL chooses the source and CAPMD converts the selected
+    -- rising/falling edge into one rising capture trigger.
+    ---------------------------------------------------------------------------
+    WITH btctl2_q(1 DOWNTO 0) SELECT
+        cap_input_w <= CAPIN1_i WHEN "00",
+                       CAPIN2_i WHEN "01",
+                       '1'      WHEN "10",
+                       '0'      WHEN OTHERS;
 
-    OUT_UNIT_INST : OUTPUT_UNIT
-        generic map (n => n)
-        port map (
-            y_i        => BTCL0_q,      -- period
-            x_i        => BTCL1_q,      -- duty
-            timer_i    => BTCNT_w,
-            ena_i      => BTOUTEN,
-            clk_i      => btclk_w,
-            pwm_mode_i => BTOUTMD,
-            pwm_out    => PWM_out,
-            equy_out   => EUQ0_w,
-            equx_out   => EUQ1_w
+    WITH btctl2_q(3 DOWNTO 2) SELECT
+        cap_trigger_w <= cap_input_w     WHEN "01",
+                         NOT cap_input_w WHEN "10",
+                         '0'             WHEN OTHERS;
+
+    -- BTCAPR loads BTCNT only on the selected rising/falling capture event.
+    PROCESS (cap_trigger_w, rst_i)
+    BEGIN
+        IF rst_i = '1' THEN
+            btcapr_q <= (OTHERS => '0');
+        ELSIF rising_edge(cap_trigger_w) THEN
+            btcapr_q <= btcnt_w;
+        END IF;
+    END PROCESS;
+
+    ---------------------------------------------------------------------------
+    -- Output Compare/PWM unit.  BTCL0 is the Y comparison (EQU0), and BTCL1
+    -- is the X comparison (EQU1).  BTOUTEN='0' holds the PWM output value.
+    ---------------------------------------------------------------------------
+    PWM_UNIT : OUTPUT_UNIT
+        GENERIC MAP (
+            n => N
+        )
+        PORT MAP (
+            y_i        => btcl0_q,
+            x_i        => btcl1_q,
+            timer_i    => btcnt_w,
+            ena_i      => btctl1_q(6),
+            clk_i      => timer_clk_w,
+            pwm_mode_i => btctl1_q(7),
+            pwm_out    => pwmout_w,
+            equy_out   => equ0_w,
+            equx_out   => equ1_w
         );
 
-    ----------------------------------------------------------------
-    -- Latch BTCL0 / Latch BTCL1, enabled by HEU0 (O1)
-    ----------------------------------------------------------------
-    HEU0_w <= BTCLR or EUQ0_w;
+    ---------------------------------------------------------------------------
+    -- BTINT interrupt-source selection: EQU0, EQU1, or Capture event.
+    -- Values "10" and "11" both select Capture, matching the three options.
+    ---------------------------------------------------------------------------
+    WITH btctl1_q(1 DOWNTO 0) SELECT
+        BTIFG_o <= equ0_w        WHEN "00",
+                   equ1_w        WHEN "01",
+                   cap_trigger_w WHEN OTHERS;
 
-    BTCL_LATCH : process (HEU0_w, BTCMPR0, BTCMPR1)
-    begin
-        if HEU0_w = '1' then
-            BTCL0_q <= BTCMPR0;
-            BTCL1_q <= BTCMPR1;
-        end if;
-    end process;
-
-    ----------------------------------------------------------------
-    -- CAPISEL mux: 00 CAPIN1 | 01 CAPIN2 | 10 VCC | 11 GND
-    -- CAPIN1/CAPIN2 are external pins, so a 2FF synchroniser precedes the
-    -- edge detector; the third flop supplies the edge history.
-    ----------------------------------------------------------------
-    with CAPISEL select cap_src_w <=
-        CAPIN1 when "00",
-        CAPIN2 when "01",
-        '1'    when "10",
-        '0'    when others;
-
-    CAP_SYNC : process (btclk_w)
-    begin
-        if rising_edge(btclk_w) then
-            cap_s1_q <= cap_src_w;
-            cap_s2_q <= cap_s1_q;
-            cap_s3_q <= cap_s2_q;
-        end if;
-    end process;
-
-    -- Capture Mode (PDF text): 0,3 disabled | 1 rising | 2 falling
-    with CAPMD select cap_evt_w <=
-        (    cap_s2_q and not cap_s3_q) when "01",
-        (not cap_s2_q and     cap_s3_q) when "10",
-        '0'                             when others;
-
-    ----------------------------------------------------------------
-    -- BTCNT_CAPTURE on event register -> BTCAPR
-    ----------------------------------------------------------------
-    BTCNT_CAPTURE : process (btclk_w)
-    begin
-        if rising_edge(btclk_w) then
-            if cap_evt_w = '1' then
-                BTCAPR_q <= BTCNT_w;
-            end if;
-        end if;
-    end process;
-
-    BTCAPR <= BTCAPR_q;
-
-    ----------------------------------------------------------------
-    -- BTINT mux -> BTIFG : 00 EUQ0 | 01 EUQ1 | 10 capture event
-    ----------------------------------------------------------------
-    with BTINT select BTIFG <=
-        EUQ0_w    when "00",
-        EUQ1_w    when "01",
-        cap_evt_w when "10",
-        '0'       when others;
-
-end architecture struct;
+    BTCAPR_o  <= btcapr_q;
+    PWM_o     <= pwmout_w;
+END ARCHITECTURE structural;

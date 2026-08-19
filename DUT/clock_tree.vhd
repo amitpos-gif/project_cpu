@@ -4,6 +4,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use work.cond_compilation_package.all;
+use work.aux_package.all;
 
 entity clock_tree is
     port (
@@ -18,20 +19,6 @@ entity clock_tree is
 end entity clock_tree;
 
 architecture structural of clock_tree is
-
- 
-    component PLL is
-        generic (
-            OUT_DIVIDE_BY   : NATURAL := G_PLL_DIV;
-            OUT_MULTIPLY_BY : NATURAL := G_PLL_MUL
-        );
-        port (
-            areset : in  std_logic;
-            inclk0 : in  std_logic;
-            c0     : out std_logic;
-            locked : out std_logic
-        );
-    end component;
 
     signal mclk_lock_w  : std_logic;
     signal smclk_lock_w : std_logic;

@@ -20,8 +20,11 @@ entity mcu_top is
         KEY1     : in  std_logic;
         KEY2     : in  std_logic;
         KEY3     : in  std_logic;
+        CAPIN1   : in  std_logic;
+        CAPIN2   : in  std_logic;
         SW       : in  std_logic_vector(7 downto 0);    -- SW7-SW0
         LEDR     : out std_logic_vector(7 downto 0);    -- LEDR7-LEDR0
+        PWM      : out std_logic;
         HEX0     : out std_logic_vector(6 downto 0);
         HEX1     : out std_logic_vector(6 downto 0);
         HEX2     : out std_logic_vector(6 downto 0);
@@ -33,48 +36,6 @@ end entity mcu_top;
 
 architecture structural of mcu_top is
 
-    component BidirPin is
-        generic ( width : integer := 16 );
-        port (
-            Dout  : in    std_logic_vector(width-1 downto 0);
-            en    : in    std_logic;
-            Din   : out   std_logic_vector(width-1 downto 0);
-            IOpin : inout std_logic_vector(width-1 downto 0)
-        );
-    end component;
-
-    component gpio_peripherals is
-        port (
-            smclk    : in    std_logic;
-            Address  : in    std_logic_vector(13 downto 0);
-            Data     : inout std_logic_vector(7 downto 0);
-            MemRead  : in    std_logic;
-            MemWrite : in    std_logic;
-            SW       : in    std_logic_vector(7 downto 0);
-            LEDR     : out   std_logic_vector(7 downto 0);
-            HEX0     : out   std_logic_vector(6 downto 0);
-            HEX1     : out   std_logic_vector(6 downto 0);
-            HEX2     : out   std_logic_vector(6 downto 0);
-            HEX3     : out   std_logic_vector(6 downto 0);
-            HEX4     : out   std_logic_vector(6 downto 0);
-            HEX5     : out   std_logic_vector(6 downto 0)
-        );
-    end component;
-
-    component pushbutton_peripheral is
-        port (
-            smclk     : in    std_logic;
-            rst_i     : in    std_logic;
-            Address   : in    std_logic_vector(13 downto 0);
-            Data      : inout std_logic_vector(7 downto 0);
-            MemRead   : in    std_logic;
-            KEY1      : in    std_logic;
-            KEY2      : in    std_logic;
-            KEY3      : in    std_logic;
-            key_irq_o : out   std_logic_vector(2 downto 0)
-        );
-    end component;
-
     -- Signals tapped for the (stub) BUS Interface Logic
     signal alu_res_w      : std_logic_vector(31 downto 0);
     signal dtcm_data_wr_w : std_logic_vector(31 downto 0);
@@ -85,6 +46,16 @@ architecture structural of mcu_top is
     signal io_data_w      : std_logic_vector(7 downto 0);  -- BidirPin's IOpin: the shared peripheral Data bus
     signal io_data_rd_w   : std_logic_vector(7 downto 0);  -- BidirPin's Din: live readback of io_data_w
     signal key_irq_w      : std_logic_vector(2 downto 0);
+    signal btcapr_w       : std_logic_vector(31 downto 0);
+    signal btifg_w        : std_logic;
+    signal peripheral_rd_w : std_logic_vector(31 downto 0);
+
+    -- These three wires become CPU/controller handshake wires in the next
+    -- integration step.  Until the CPU interrupt protocol is added, GIE is
+    -- disabled and INTA is inactive so the controller cannot interrupt the CPU.
+    signal gie_w          : std_logic;
+    signal inta_w         : std_logic;
+    signal intr_w         : std_logic;
 
     -- Remaining RV32I_CORE outputs: not consumed by this stub, wired only
     -- to keep the port map complete (mirrors the core's own Signal-Tap
@@ -117,7 +88,7 @@ begin
             rst_i           => rst_i,
             clk_i           => clk_i,
             divclk_i        => divclk_i,
-            dtcm_data_rd_i  => x"000000" & io_data_rd_w,
+            dtcm_data_rd_i  => peripheral_rd_w,
 
             pc_o            => pc_w,
             instruction_o   => instruction_w,
@@ -152,6 +123,16 @@ begin
             Din   => io_data_rd_w,
             IOpin => io_data_w
         );
+
+    ----------------------------------------------------------------
+    -- Peripheral read return path.  The common peripheral bus is byte wide,
+    -- while BTCAPR is a 32-bit word register.  Its word read is therefore
+    -- selected directly; all byte-wide peripheral reads are zero extended.
+    ----------------------------------------------------------------
+    peripheral_rd_w <= btcapr_w
+                       WHEN mem_read_w = '1' AND
+                            io_address_w = "10000000101000" -- 0x2028
+                       ELSE x"000000" & io_data_rd_w;
 
     ----------------------------------------------------------------
     -- Peripherals (Figure 1 "Peripherals" box) - GPIO only (Table 5).
@@ -189,6 +170,50 @@ begin
             KEY2      => KEY2,
             KEY3      => KEY3,
             key_irq_o => key_irq_w
+        );
+
+    ----------------------------------------------------------------
+    -- Basic Timer (pages 7-8).  Its writable registers are selected by its
+    -- internal address decoder.  BTCAPR is capture-only and is read above.
+    ----------------------------------------------------------------
+    BASIC_TIMER_UNIT : basic_timer_top
+        generic map (
+            N => 32
+        )
+        port map (
+            smclk_i     => smclk,
+            rst_i       => rst_i,
+            Address_i   => io_address_w,
+            WriteData_i => dtcm_data_wr_w,
+            MemWrite_i  => mem_write_w,
+            CAPIN1_i    => CAPIN1,
+            CAPIN2_i    => CAPIN2,
+            BTCAPR_o    => btcapr_w,
+            BTIFG_o     => btifg_w,
+            PWM_o       => PWM
+        );
+
+    ----------------------------------------------------------------
+    -- Interrupt Controller (pages 13-15).  It shares the byte-wide MMIO bus
+    -- with GPIO and the pushbuttons.  Its event inputs are now fully wired;
+    -- the CPU-side GIE/INTA/INTR protocol is the next implementation step.
+    ----------------------------------------------------------------
+    gie_w  <= '0';
+    inta_w <= '1';
+
+    INTERRUPTS : interrupt_controller_top
+        port map (
+            smclk_i   => smclk,
+            rst_i     => rst_i,
+            Address   => io_address_w,
+            Data      => io_data_w,
+            MemRead   => mem_read_w,
+            MemWrite  => mem_write_w,
+            BTIFG_i   => btifg_w,
+            KEY_irq_i => key_irq_w,
+            GIE_i     => gie_w,
+            INTA_i    => inta_w,
+            INTR_o    => intr_w
         );
 
 end architecture structural;

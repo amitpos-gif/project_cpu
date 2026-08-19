@@ -23,10 +23,5 @@ package gpio_pkg is
 
     -- Page 6: memory-mapped peripheral with interrupt capability
     constant PORT_PB_ADDR   : natural := 16#2014#;  -- KEY3-KEY1, GPI
-    constant BTCTL1_ADDR     : natural := 16#201C#;  -- Basic Timer Control Register 1
-    constant BTCTL2_ADDR     : natural := 16#201D#;  -- Basic Timer Control Register 2
-    constant BTCMPR0_ADDR    : natural := 16#2020#;  -- Basic Timer Compare Register 0
-    constant BTCMPR1_ADDR    : natural := 16#2024#;  -- Basic Timer Compare Register 1  
-    constant BTCAPR_ADDR     : natural := 16#2028#;  -- Basic Timer Capture Register
 
 end package gpio_pkg;

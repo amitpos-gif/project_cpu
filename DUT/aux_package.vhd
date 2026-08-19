@@ -232,6 +232,10 @@ END component;
 	end component;
 ---------------------------------------------------------
 	COMPONENT PLL IS
+		generic(
+			OUT_DIVIDE_BY   : NATURAL := G_PLL_DIV;
+			OUT_MULTIPLY_BY : NATURAL := G_PLL_MUL
+		);
 		port(
 			areset		: IN STD_LOGIC  := '0';
 			inclk0		: IN STD_LOGIC  := '0';
@@ -286,51 +290,249 @@ END component;
 		);
 	end component;
 ---------------------------------------------------------
-	component digit_circ is
-		GENERIC (n : INTEGER := 16);
-		PORT (
-			y_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-			x_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-			timer_i       : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-			ena_i         : IN  STD_LOGIC;
-			clk_i         : IN  std_logic;
-			pwm_mode_i    : IN  std_logic_vector(1 downto 0);
-			pwm_out       : OUT std_logic;
-			equy_out      : OUT std_logic;
-			equx_out      : OUT std_logic
-		);
-	end component ;
----------------------------------------------------------
+	-- Basic Timer counter core
 	component bit_Timer is
-    generic (
-        n : integer := 32
-    );
-    port (
-        clk       : in  std_logic;
-        rst       : in  std_logic;
-        ena       : in  std_logic;
-        EQUY      : in std_logic;
-        timer_val : out std_logic_vector(n-1 downto 0)
-    );
-	end component ;	
+		GENERIC(
+			n : INTEGER := 32
+		);
+		PORT(
+			clk       : IN  STD_LOGIC;
+			rst       : IN  STD_LOGIC;
+			ena       : IN  STD_LOGIC;
+			EQUY      : IN  STD_LOGIC;
+			timer_val : OUT STD_LOGIC_VECTOR(n-1 DOWNTO 0)
+		);
+	end component;
 ---------------------------------------------------------
+	-- Basic Timer output-compare/PWM unit
 	component OUTPUT_UNIT is
-      GENERIC (n : INTEGER := 32
-	); 
-  PORT 
-  (  
-	      y_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-          x_i           : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-		  timer_i       : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
-          ena_i         : in  STD_LOGIC;
-          clk_i         : in  std_logic;
-          pwm_mode_i    : in  std_logic;
-          pwm_out       : out std_logic;
-          equy_out      : out std_logic;
-          equx_out      : out std_logic
-          
-            
-  ); 
-	END component;
-	
+		GENERIC(
+			n : INTEGER := 32
+		);
+		PORT(
+			y_i        : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			x_i        : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			timer_i    : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
+			ena_i      : IN  STD_LOGIC;
+			clk_i      : IN  STD_LOGIC;
+			pwm_mode_i : IN  STD_LOGIC;
+			pwm_out    : OUT STD_LOGIC;
+			equy_out   : OUT STD_LOGIC;
+			equx_out   : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Basic Timer register/address decoder
+	component addr_decoder_basic_timer is
+		PORT(
+			Address    : IN  STD_LOGIC_VECTOR(13 DOWNTO 0);
+			CS_BTCTL1  : OUT STD_LOGIC;
+			CS_BTCTL2  : OUT STD_LOGIC;
+			CS_BTCMPR0 : OUT STD_LOGIC;
+			CS_BTCMPR1 : OUT STD_LOGIC;
+			CS_BTCAPR  : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Basic Timer datapath/control unit
+	component basic_timer is
+		GENERIC(
+			N : INTEGER := 32
+		);
+		PORT(
+			smclk_i       : IN  STD_LOGIC;
+			rst_i         : IN  STD_LOGIC;
+			BTCTL1_we_i   : IN  STD_LOGIC;
+			BTCTL2_we_i   : IN  STD_LOGIC;
+			BTCMPR0_we_i  : IN  STD_LOGIC;
+			BTCMPR1_we_i  : IN  STD_LOGIC;
+			reg_data_i    : IN  STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+			CAPIN1_i      : IN  STD_LOGIC;
+			CAPIN2_i      : IN  STD_LOGIC;
+			BTCAPR_o      : OUT STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+			BTIFG_o       : OUT STD_LOGIC;
+			PWM_o         : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Basic Timer with its memory-address decoder
+	component basic_timer_top is
+		GENERIC(
+			N : INTEGER := 32
+		);
+		PORT(
+			smclk_i     : IN  STD_LOGIC;
+			rst_i       : IN  STD_LOGIC;
+			Address_i   : IN  STD_LOGIC_VECTOR(13 DOWNTO 0);
+			WriteData_i : IN  STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+			MemWrite_i  : IN  STD_LOGIC;
+			CAPIN1_i    : IN  STD_LOGIC;
+			CAPIN2_i    : IN  STD_LOGIC;
+			BTCAPR_o    : OUT STD_LOGIC_VECTOR(N-1 DOWNTO 0);
+			BTIFG_o     : OUT STD_LOGIC;
+			PWM_o       : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Interrupt-controller register address decoder
+	component addr_decoder_interrupt is
+		PORT(
+			Address : IN  STD_LOGIC_VECTOR(13 DOWNTO 0);
+			CS_IE   : OUT STD_LOGIC;
+			CS_IFG  : OUT STD_LOGIC;
+			CS_TYPE : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Required non-bonus interrupt controller
+	component interrupt_controller is
+		PORT(
+			smclk_i    : IN  STD_LOGIC;
+			rst_i      : IN  STD_LOGIC;
+			IE_we_i    : IN  STD_LOGIC;
+			IFG_we_i   : IN  STD_LOGIC;
+			reg_data_i : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+			BTIFG_i    : IN  STD_LOGIC;
+			KEY_irq_i  : IN  STD_LOGIC_VECTOR(2 DOWNTO 0);
+			GIE_i      : IN  STD_LOGIC;
+			INTA_i     : IN  STD_LOGIC;
+			IE_o       : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			IFG_o      : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			TYPE_o     : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			INTR_o     : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- Interrupt controller with decoder and byte-wide MMIO interface
+	component interrupt_controller_top is
+		PORT(
+			smclk_i   : IN    STD_LOGIC;
+			rst_i     : IN    STD_LOGIC;
+			Address   : IN    STD_LOGIC_VECTOR(13 DOWNTO 0);
+			Data      : INOUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			MemRead   : IN    STD_LOGIC;
+			MemWrite  : IN    STD_LOGIC;
+			BTIFG_i   : IN    STD_LOGIC;
+			KEY_irq_i : IN    STD_LOGIC_VECTOR(2 DOWNTO 0);
+			GIE_i     : IN    STD_LOGIC;
+			INTA_i    : IN    STD_LOGIC;
+			INTR_o    : OUT   STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	-- GPIO address decoder
+	component addr_decoder_gpio is
+		PORT(
+			Address  : IN  STD_LOGIC_VECTOR(13 DOWNTO 0);
+			CS_LEDR  : OUT STD_LOGIC;
+			CS_HEX01 : OUT STD_LOGIC;
+			CS_HEX23 : OUT STD_LOGIC;
+			CS_HEX45 : OUT STD_LOGIC;
+			CS_SW    : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	component d_latch_byte is
+		PORT(
+			clk : IN  STD_LOGIC;
+			D   : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+			En  : IN  STD_LOGIC;
+			Q   : OUT STD_LOGIC_VECTOR(7 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component tristate_byte is
+		PORT(
+			D  : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+			OE : IN  STD_LOGIC;
+			Y  : OUT STD_LOGIC_VECTOR(7 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component hex7seg_decoder is
+		PORT(
+			hex_in : IN  STD_LOGIC_VECTOR(3 DOWNTO 0);
+			seg    : OUT STD_LOGIC_VECTOR(6 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component gpio_peripherals is
+		PORT(
+			smclk    : IN    STD_LOGIC;
+			Address  : IN    STD_LOGIC_VECTOR(13 DOWNTO 0);
+			Data     : INOUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			MemRead  : IN    STD_LOGIC;
+			MemWrite : IN    STD_LOGIC;
+			SW       : IN    STD_LOGIC_VECTOR(7 DOWNTO 0);
+			LEDR     : OUT   STD_LOGIC_VECTOR(7 DOWNTO 0);
+			HEX0     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX1     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX2     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX3     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX4     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX5     : OUT   STD_LOGIC_VECTOR(6 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component pushbutton_peripheral is
+		PORT(
+			smclk     : IN    STD_LOGIC;
+			rst_i     : IN    STD_LOGIC;
+			Address   : IN    STD_LOGIC_VECTOR(13 DOWNTO 0);
+			Data      : INOUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			MemRead   : IN    STD_LOGIC;
+			KEY1      : IN    STD_LOGIC;
+			KEY2      : IN    STD_LOGIC;
+			KEY3      : IN    STD_LOGIC;
+			key_irq_o : OUT   STD_LOGIC_VECTOR(2 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component BidirPin is
+		GENERIC(
+			width : INTEGER := 16
+		);
+		PORT(
+			Dout  : IN    STD_LOGIC_VECTOR(width-1 DOWNTO 0);
+			en    : IN    STD_LOGIC;
+			Din   : OUT   STD_LOGIC_VECTOR(width-1 DOWNTO 0);
+			IOpin : INOUT STD_LOGIC_VECTOR(width-1 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+	component clock_tree is
+		PORT(
+			rst_i      : IN  STD_LOGIC;
+			baseclk_i  : IN  STD_LOGIC;
+			mclk_o     : OUT STD_LOGIC;
+			accelclk_o : OUT STD_LOGIC;
+			smclk_o    : OUT STD_LOGIC;
+			locked_o   : OUT STD_LOGIC
+		);
+	end component;
+---------------------------------------------------------
+	component mcu_top is
+		PORT(
+			rst_i    : IN  STD_LOGIC;
+			clk_i    : IN  STD_LOGIC;
+			divclk_i : IN  STD_LOGIC;
+			smclk    : IN  STD_LOGIC;
+			KEY1     : IN  STD_LOGIC;
+			KEY2     : IN  STD_LOGIC;
+			KEY3     : IN  STD_LOGIC;
+			CAPIN1   : IN  STD_LOGIC;
+			CAPIN2   : IN  STD_LOGIC;
+			SW       : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+			LEDR     : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+			PWM      : OUT STD_LOGIC;
+			HEX0     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX1     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX2     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX3     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX4     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0);
+			HEX5     : OUT STD_LOGIC_VECTOR(6 DOWNTO 0)
+		);
+	end component;
+---------------------------------------------------------
+
 end aux_package;
