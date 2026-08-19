@@ -32,6 +32,7 @@ package aux_package is
 			--#FinalProject Divider: fast divider clock
 			divclk_i					:IN	STD_LOGIC;
 			dtcm_data_rd_i		:IN	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			INTR_i                 :IN STD_LOGIC;
 
 			--Outputs (used also for Signal-Tap auxiliary pins)
 			pc_o							:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
@@ -53,7 +54,9 @@ package aux_package is
 			dtcm_data_wr_o		:OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			dtcm_data_rd_o		:OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 
-			mclk_cnt_o				:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0)
+			mclk_cnt_o				:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
+			INTA_o                  :OUT STD_LOGIC;
+			GIE_o                   :OUT STD_LOGIC
 		);
 	end component;
 --------------------------------------------------------- 
@@ -108,8 +111,13 @@ END component;
 	component control is
 		PORT( 
 		--Inputs
+		clk_i                 : IN  STD_LOGIC;
+		rst_i                 : IN  STD_LOGIC;
 		instruction_i 		: IN 	STD_LOGIC_VECTOR(31 DOWNTO 0);
 		DIVbusy_ctrl_i		: IN	STD_LOGIC;
+		DIVstall_ctrl_i       : IN  STD_LOGIC;
+		INTR_ctrl_i           : IN  STD_LOGIC;
+		TYPEdata_ctrl_i       : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
 		
 		--Outputs
 		RegDst_ctrl_o 		: OUT 	STD_LOGIC;
@@ -128,7 +136,13 @@ END component;
 		DIVOp_ctrl_o			: OUT	STD_LOGIC;
 		PChold_ctrl_o		: OUT	STD_LOGIC;
 		WBSrc0_ctrl_o		: OUT	STD_LOGIC;
-		WBSrc1_ctrl_o		: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0)
+		WBSrc1_ctrl_o		: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0);
+		INTA_ctrl_o           : OUT STD_LOGIC;
+		IRQhold_ctrl_o        : OUT STD_LOGIC;
+		IRQservice_ctrl_o     : OUT STD_LOGIC;
+		IRQtype_ctrl_o        : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+		GIEclear_ctrl_o       : OUT STD_LOGIC;
+		GIEset_ctrl_o         : OUT STD_LOGIC
 	);
 	end component;
 ---------------------------------------------------------	
@@ -196,11 +210,16 @@ END component;
 			mul_res_i       : IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			quotient_i      : IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			rem_i           : IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			IRQ_clear_gie_i : IN  STD_LOGIC;
+			IRQ_set_gie_i   : IN  STD_LOGIC;
+			IRQ_save_tp_i   : IN  STD_LOGIC;
+			IRQ_return_pc_i : IN  STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 
 			--Outputs
 			read_data1_o		: OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 			read_data2_o		: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-			SignExt_o 			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)		 
+			SignExt_o 			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+			GIE_o           : OUT STD_LOGIC
 		);
 	end component;
 ---------------------------------------------------------		

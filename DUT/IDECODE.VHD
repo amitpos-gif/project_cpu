@@ -33,11 +33,16 @@ ENTITY Idecode IS
 		mul_res_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		quotient_i		: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		rem_i				: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		IRQ_clear_gie_i : IN  STD_LOGIC;
+		IRQ_set_gie_i   : IN  STD_LOGIC;
+		IRQ_save_tp_i   : IN  STD_LOGIC;
+		IRQ_return_pc_i : IN  STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 		
 		--Outputs
 		read_data1_o		: OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		read_data2_o		: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		SignExt_o 			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0)		 
+		SignExt_o 			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		GIE_o           : OUT STD_LOGIC
 	);
 END Idecode;
 
@@ -125,16 +130,27 @@ BEGIN
 	begin
 		if (rst_i='1') then
 			FOR i IN 0 TO 31 LOOP
-				RF_q(i) <= CONV_STD_LOGIC_VECTOR(0,32);
+				RF_q(i) <= CONV_STD_LOGIC_VECTOR(0,DATA_BUS_WIDTH);
 			END LOOP;
 		elsif (clk_i'event and clk_i='1') then
-			if (RegWrite_ctrl_i = '1' AND rd_w /= 0) then	-- RF(0) hard-wired of value zero
+			-- GIE is bit 0 of gp (x3).
+			if IRQ_clear_gie_i = '1' then
+				RF_q(3)(0) <= '0';
+			elsif IRQ_set_gie_i = '1' then
+				RF_q(3)(0) <= '1';
+			end if;
+
+			-- Hardware interrupt entry saves the return PC in tp (x4).
+			if IRQ_save_tp_i = '1' then
+				RF_q(4) <= ZEROS_DBUS2PCADDR & IRQ_return_pc_i;
+			elsif (RegWrite_ctrl_i = '1' AND rd_w /= 0) then	-- RF(0) hard-wired of value zero
 				RF_q(CONV_INTEGER(rd_w)) <= write_data_w;
 				-- index type is integer so we must use conv_integer for type casting
 			end if;
 		end if;
 	end process;
 
-END behavior;
+	GIE_o <= RF_q(3)(0);
 
+END behavior;
 

@@ -50,9 +50,7 @@ architecture structural of mcu_top is
     signal btifg_w        : std_logic;
     signal peripheral_rd_w : std_logic_vector(31 downto 0);
 
-    -- These three wires become CPU/controller handshake wires in the next
-    -- integration step.  Until the CPU interrupt protocol is added, GIE is
-    -- disabled and INTA is inactive so the controller cannot interrupt the CPU.
+    -- CPU/interrupt-controller handshake wires.
     signal gie_w          : std_logic;
     signal inta_w         : std_logic;
     signal intr_w         : std_logic;
@@ -89,6 +87,7 @@ begin
             clk_i           => clk_i,
             divclk_i        => divclk_i,
             dtcm_data_rd_i  => peripheral_rd_w,
+            INTR_i          => intr_w,
 
             pc_o            => pc_w,
             instruction_o   => instruction_w,
@@ -104,7 +103,9 @@ begin
             dtcm_addr_o     => dtcm_addr_w,
             dtcm_data_wr_o  => dtcm_data_wr_w,
             dtcm_data_rd_o  => dtcm_data_rd_w,
-            mclk_cnt_o      => mclk_cnt_w
+            mclk_cnt_o      => mclk_cnt_w,
+            INTA_o          => inta_w,
+            GIE_o           => gie_w
         );
 
     ----------------------------------------------------------------
@@ -195,12 +196,9 @@ begin
 
     ----------------------------------------------------------------
     -- Interrupt Controller (pages 13-15).  It shares the byte-wide MMIO bus
-    -- with GPIO and the pushbuttons.  Its event inputs are now fully wired;
-    -- the CPU-side GIE/INTA/INTR protocol is the next implementation step.
+    -- with GPIO and the pushbuttons.  INTR, active-low INTA, and GIE close the
+    -- hardware handshake loop with the CPU.
     ----------------------------------------------------------------
-    gie_w  <= '0';
-    inta_w <= '1';
-
     INTERRUPTS : interrupt_controller_top
         port map (
             smclk_i   => smclk,

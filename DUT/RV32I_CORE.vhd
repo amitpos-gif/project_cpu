@@ -30,6 +30,7 @@ ENTITY RV32I_CORE IS
 		clk_i							:IN	STD_LOGIC;
 		divclk_i					:IN	STD_LOGIC;
 		dtcm_data_rd_i		:IN	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		INTR_i                 :IN STD_LOGIC;
 		
 		--Outputs (used also for Signal-Tap auxiliary pins)
 		pc_o							:OUT	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
@@ -51,7 +52,9 @@ ENTITY RV32I_CORE IS
 		dtcm_data_wr_o		:OUT 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		dtcm_data_rd_o		:OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		
-		mclk_cnt_o				:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0)
+		mclk_cnt_o				:OUT	STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
+		INTA_o                  :OUT STD_LOGIC;
+		GIE_o                   :OUT STD_LOGIC
 	);		
 END RV32I_CORE;
 --============================================================================
@@ -105,6 +108,18 @@ ARCHITECTURE structure OF RV32I_CORE IS
 	SIGNAL is_io_addr_w		: STD_LOGIC;
 	SIGNAL dtcm_write_w		: STD_LOGIC;
 	SIGNAL wb_dtcm_data_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	-- Interrupt protocol datapath/control signals
+	SIGNAL irq_hold_w       : STD_LOGIC;
+	SIGNAL irq_service_w    : STD_LOGIC;
+	SIGNAL irq_type_w       : STD_LOGIC_VECTOR(7 DOWNTO 0);
+	SIGNAL irq_type_addr_w  : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL gie_clear_w      : STD_LOGIC;
+	SIGNAL gie_set_w        : STD_LOGIC;
+	SIGNAL gie_w            : STD_LOGIC;
+	SIGNAL inta_w           : STD_LOGIC;
+	SIGNAL data_addr_w      : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL ifetch_target_w  : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL ifetch_jalr_w    : STD_LOGIC;
 
 	CONSTANT DIV_IDLE_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "000";
 	CONSTANT DIV_LOAD_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "001";
@@ -147,8 +162,8 @@ BEGIN
 		Branch_ctrl_i 	=> branch_w,
 		brTaken_i				=> brTaken_w,
 		Jal_ctrl_i 			=> Jal_ctrl_w,
-		Jalr_ctrl_i			=> Jalr_ctrl_w,
-		alu_res_i				=> alu_res_w,
+		Jalr_ctrl_i			=> ifetch_jalr_w,
+		alu_res_i				=> ifetch_target_w,
 		
 		--Outputs
 		pc_o 						=> pc_w,
@@ -180,11 +195,16 @@ BEGIN
 		mul_res_i    	=> mul_res_w,
 		quotient_i			=> quotient_w,
 		rem_i					=> remainder_w,
+		IRQ_clear_gie_i => gie_clear_w,
+		IRQ_set_gie_i   => gie_set_w,
+		IRQ_save_tp_i   => irq_service_w,
+		IRQ_return_pc_i => pc_w,
 		
 		--Outputs
 		read_data1_o 		=> read_data1_w,
-    read_data2_o 		=> read_data2_w,
-		SignExt_o 			=> sign_extend_w	 
+	    read_data2_o 		=> read_data2_w,
+		SignExt_o 			=> sign_extend_w,
+		GIE_o           => gie_w
 	);
 	--=======================================
 	-- CONTROL module connection
@@ -192,8 +212,13 @@ BEGIN
 	CTL:   control
 	PORT MAP ( 	
 		--Inputs
+		clk_i                 => mclk_w,
+		rst_i                 => rst_i,
 		instruction_i 		=> instruction_w,
 		DIVbusy_ctrl_i		=> div_busy_w,
+		DIVstall_ctrl_i       => div_stall_w,
+		INTR_ctrl_i           => INTR_i,
+		TYPEdata_ctrl_i       => dtcm_data_rd_i(7 DOWNTO 0),
 		
 		--Outputs
 		RegDst_ctrl_o			=> reg_dst_w,
@@ -212,14 +237,25 @@ BEGIN
 		DIVOp_ctrl_o			=> div_op_w,
 		PChold_ctrl_o		=> pc_hold_ctrl_w,
 		WBSrc0_ctrl_o		=> wb_src0_w,
-		WBSrc1_ctrl_o		=> wb_src1_w
+		WBSrc1_ctrl_o		=> wb_src1_w,
+		INTA_ctrl_o           => inta_w,
+		IRQhold_ctrl_o        => irq_hold_w,
+		IRQservice_ctrl_o     => irq_service_w,
+		IRQtype_ctrl_o        => irq_type_w,
+		GIEclear_ctrl_o       => gie_clear_w,
+		GIEset_ctrl_o         => gie_set_w
 	);
 
 	-- Stall immediately on decode and keep the instruction until the complete
 	-- stage. This covers the delay before synchronized DIVBUSY becomes high.
 	div_stall_w <= '0' WHEN div_stage_q = DIV_COMPLETE_C ELSE div_op_w;
-	pc_hold_w  <= pc_hold_ctrl_w OR div_stall_w;
+	pc_hold_w  <= pc_hold_ctrl_w OR div_stall_w OR irq_hold_w;
 	reg_write_w <= reg_write_ctrl_w AND NOT div_stall_w;
+
+	-- Cycle 2 reuses the existing JALR input of IFETCH.  The target is the
+	-- handler address read from the vector table at Memory[TYPE].
+	ifetch_jalr_w   <= Jalr_ctrl_w OR irq_service_w;
+	ifetch_target_w <= dtcm_data_rd_w WHEN irq_service_w = '1' ELSE alu_res_w;
 	--=======================================
 	-- EXECUTE module connection
 	--=======================================
@@ -339,16 +375,21 @@ BEGIN
 	--=======================================
 	-- DTCM module connection
 	--=======================================
+	-- During interrupt cycle 2, TYPE is the byte address of the vector-table
+	-- entry. Otherwise the ordinary ALU result supplies the data address.
+	irq_type_addr_w <= (DATA_BUS_WIDTH-1 DOWNTO 8 => '0') & irq_type_w;
+	data_addr_w     <= irq_type_addr_w WHEN irq_service_w = '1' ELSE alu_res_w;
+
 	G1: 
 	if (WORD_GRANULARITY = True) generate -- i.e. each WORD has a unike address
-		dtcm_addr_w	<= alu_res_w(MA_WIDTH-1 DOWNTO 2); -- increment memory address by 4;
+		dtcm_addr_w	<= data_addr_w(MA_WIDTH-1 DOWNTO 2); -- increment memory address by 4;
 	elsif (WORD_GRANULARITY = False) generate -- i.e. each BYTE has a unike address
-		dtcm_addr_w	<= alu_res_w(MA_WIDTH-1 DOWNTO 0);
+		dtcm_addr_w	<= data_addr_w(MA_WIDTH-1 DOWNTO 0);
 	end generate;
 
 	-- Address bit MA_WIDTH selects the peripheral region. An I/O store must
 	-- not alias into DTCM, and an I/O load returns the external bus data.
-	is_io_addr_w   <= alu_res_w(MA_WIDTH);
+	is_io_addr_w   <= data_addr_w(MA_WIDTH);
 	dtcm_write_w   <= mem_write_w AND NOT is_io_addr_w;
 	wb_dtcm_data_w <= dtcm_data_rd_i WHEN is_io_addr_w = '1' ELSE dtcm_data_rd_w;
 	
@@ -415,5 +456,7 @@ BEGIN
 	mclk_cnt_o				<=	mclk_cnt_q;																	-- TOP output
 	
 ---------------------------------------------------------------------------------------
+	INTA_o <= inta_w;
+	GIE_o  <= gie_w;
 
 END structure;

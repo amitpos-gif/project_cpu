@@ -13,8 +13,13 @@ USE work.const_package.all;
 ENTITY control IS
   PORT( 
 		--Inputs
+		clk_i                 : IN  STD_LOGIC;
+		rst_i                 : IN  STD_LOGIC;
 		instruction_i 		: IN 	STD_LOGIC_VECTOR(31 DOWNTO 0);
 		DIVbusy_ctrl_i		: IN	STD_LOGIC;
+		DIVstall_ctrl_i       : IN  STD_LOGIC;
+		INTR_ctrl_i           : IN  STD_LOGIC;
+		TYPEdata_ctrl_i       : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
 		
 		--Outputs
 		RegDst_ctrl_o 		: OUT 	STD_LOGIC;
@@ -34,7 +39,13 @@ ENTITY control IS
 		DIVOp_ctrl_o			: OUT	STD_LOGIC;
 		PChold_ctrl_o		: OUT	STD_LOGIC;
 		WBSrc0_ctrl_o		: OUT	STD_LOGIC;
-		WBSrc1_ctrl_o		: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0)
+		WBSrc1_ctrl_o		: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0);
+		INTA_ctrl_o           : OUT STD_LOGIC;
+		IRQhold_ctrl_o        : OUT STD_LOGIC;
+		IRQservice_ctrl_o     : OUT STD_LOGIC;
+		IRQtype_ctrl_o        : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
+		GIEclear_ctrl_o       : OUT STD_LOGIC;
+		GIEset_ctrl_o         : OUT STD_LOGIC
 	);
 END control;
 
@@ -48,10 +59,49 @@ ARCHITECTURE behavior OF control IS
 	SIGNAL	srl_w, srli_w, sub_w, xor_w, xori_w, auipc_w, lui_w, slt_w, slti_w, sltu_w, sltiu_w	: STD_LOGIC;
 	SIGNAL	divu_w, remu_w, divop_w																						: STD_LOGIC;
 	SIGNAL	reg_write_base_w																							: STD_LOGIC;
-	SIGNAL  opc_w : STD_LOGIC_VECTOR(6 DOWNTO 0);
+		SIGNAL  opc_w : STD_LOGIC_VECTOR(6 DOWNTO 0);
+		SIGNAL  irq_state_q  : STD_LOGIC_VECTOR(1 DOWNTO 0);
+		SIGNAL  irq_type_q   : STD_LOGIC_VECTOR(7 DOWNTO 0);
+		SIGNAL  irq_active_w : STD_LOGIC;
+		CONSTANT IRQ_IDLE_C    : STD_LOGIC_VECTOR(1 DOWNTO 0) := "00";
+		CONSTANT IRQ_ACK_C     : STD_LOGIC_VECTOR(1 DOWNTO 0) := "01";
+		CONSTANT IRQ_SERVICE_C : STD_LOGIC_VECTOR(1 DOWNTO 0) := "10";
+		CONSTANT INST_RETI_C   : STD_LOGIC_VECTOR(31 DOWNTO 0) := x"00020067";
 
-BEGIN           
-	opc_w 		<=	instruction_i(6 DOWNTO 0);
+	BEGIN
+		-- Two-cycle interrupt-service controller from the project protocol.
+		PROCESS(clk_i, rst_i)
+		BEGIN
+			IF rst_i = '1' THEN
+				irq_state_q <= IRQ_IDLE_C;
+				irq_type_q  <= (OTHERS => '0');
+			ELSIF rising_edge(clk_i) THEN
+				CASE irq_state_q IS
+					WHEN IRQ_IDLE_C =>
+						IF INTR_ctrl_i = '1' AND DIVstall_ctrl_i = '0' THEN
+							irq_state_q <= IRQ_ACK_C;
+						END IF;
+					WHEN IRQ_ACK_C =>
+						irq_type_q  <= TYPEdata_ctrl_i;
+						irq_state_q <= IRQ_SERVICE_C;
+					WHEN IRQ_SERVICE_C =>
+						irq_state_q <= IRQ_IDLE_C;
+					WHEN OTHERS =>
+						irq_state_q <= IRQ_IDLE_C;
+				END CASE;
+			END IF;
+		END PROCESS;
+
+		irq_active_w      <= '0' WHEN irq_state_q = IRQ_IDLE_C ELSE '1';
+		INTA_ctrl_o       <= '0' WHEN irq_state_q = IRQ_ACK_C ELSE '1';
+		IRQhold_ctrl_o    <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';
+		IRQservice_ctrl_o <= '1' WHEN irq_state_q = IRQ_SERVICE_C ELSE '0';
+		GIEclear_ctrl_o   <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';
+		GIEset_ctrl_o     <= '1' WHEN irq_state_q = IRQ_IDLE_C AND
+		                                  instruction_i = INST_RETI_C ELSE '0';
+		IRQtype_ctrl_o    <= irq_type_q;
+
+		opc_w 		<=	instruction_i(6 DOWNTO 0);
 	-- Code to generate control signals using opcode bits
 	Rtype_w		<=  '1'	WHEN	opc_w = RTYPE_OPC  ELSE '0';
 	Itype_w		<=  '1'	WHEN	(opc_w = ITYPE_OPC) or (ld_w = '1') or (jalr_w = '1') ELSE '0';
@@ -142,13 +192,14 @@ BEGIN
 
 	reg_write_base_w	<= Rtype_w OR Itype_w OR Utype_w OR UJtype_w;
 	-- A divide may write only when the accelerator is no longer busy. 
-	RegWrite_ctrl_o 	<= reg_write_base_w AND NOT (divop_w AND DIVbusy_ctrl_i);
-	MemtoReg_ctrl_o 	<=  ld_w;
-	MemWrite_ctrl_o 	<=  st_w; 
-	MemRead_ctrl_o 		<=  ld_w;
-	Branch_ctrl_o     <=	branch_w;
-	Jal_ctrl_o				<=	jal_w; 
-	Jalr_ctrl_o				<=	jalr_w;  
+		RegWrite_ctrl_o 	<= reg_write_base_w AND NOT (divop_w AND DIVbusy_ctrl_i)
+		                         AND NOT irq_active_w;
+		MemtoReg_ctrl_o 	<=  ld_w;
+		MemWrite_ctrl_o 	<=  st_w AND NOT irq_active_w;
+		MemRead_ctrl_o 		<=  ld_w AND NOT irq_active_w;
+		Branch_ctrl_o     <=	branch_w AND NOT irq_active_w;
+		Jal_ctrl_o				<=	jal_w AND NOT irq_active_w;
+		Jalr_ctrl_o				<=	jalr_w AND NOT irq_active_w;
 	RegDst_ctrl_o			<=	jal_w or jalr_w;
 	ALUSrc_ctrl_o  		<=  Itype_w or Stype_w or Utype_w or UJtype_w;
 	
@@ -193,11 +244,11 @@ BEGIN
 
 												ALU_NONE;
 	-- #RV32IM task: MULOp enables MUL component
-	MULOp_ctrl_o			<=	mul_w;
+		MULOp_ctrl_o			<=	mul_w AND NOT irq_active_w;
 
 	-- Combinational divider controls. DIVbusy_ctrl_i must be synchronized into
 	-- the CPU clock domain before it is connected at the core level.
-	DIVOp_ctrl_o			<= divop_w;
+		DIVOp_ctrl_o			<= divop_w AND NOT irq_active_w;
 	PChold_ctrl_o		<= DIVbusy_ctrl_i;
 
 	-- WBSrc1: 00=Remainder, 01=Quotient, 10=Multiplier result.

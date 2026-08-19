@@ -70,10 +70,12 @@ BEGIN
                 ifg_v := "00" & reg_data_i(5 DOWNTO 2) & "00";
             END IF;
 
-            -- An acknowledged Basic-Timer interrupt is cleared automatically.
-            -- KEY flags are intentionally not cleared here; their ISRs clear
-            -- them through a software write to IFG.
-            IF inta_prev_q = '1' AND INTA_i = '0' AND type_q = x"10" THEN
+            -- Clear a synchronous Basic-Timer request only after cycle 1 has
+            -- finished.  The rising edge of active-low INTA means that the CPU
+            -- has already captured TYPE; clearing on INTA's falling edge could
+            -- erase TYPE before that capture when SMCLK is faster than MCLK.
+            -- KEY flags are cleared by their ISRs through a write to IFG.
+            IF inta_prev_q = '0' AND INTA_i = '1' AND type_q = x"10" THEN
                 ifg_v(2) := '0';
             END IF;
 
