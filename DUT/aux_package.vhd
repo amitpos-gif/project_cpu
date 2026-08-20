@@ -334,6 +334,7 @@ END component;
 			timer_i    : IN  STD_LOGIC_VECTOR(n-1 DOWNTO 0);
 			ena_i      : IN  STD_LOGIC;
 			clk_i      : IN  STD_LOGIC;
+			rst_i      : IN  STD_LOGIC;
 			pwm_mode_i : IN  STD_LOGIC;
 			pwm_out    : OUT STD_LOGIC;
 			equy_out   : OUT STD_LOGIC;

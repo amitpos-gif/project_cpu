@@ -15,13 +15,12 @@
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use work.gpio_pkg.all;
 
 entity pushbutton_peripheral is
     port (
         smclk      : in    std_logic;
         rst_i      : in    std_logic;
-        Address    : in    std_logic_vector(ADDR_WIDTH-1 downto 0);
+        Address    : in    std_logic_vector(13 downto 0);
         Data       : inout std_logic_vector(7 downto 0);
         MemRead    : in    std_logic;
 
@@ -34,21 +33,15 @@ entity pushbutton_peripheral is
 end entity pushbutton_peripheral;
 
 architecture rtl of pushbutton_peripheral is
-    constant PORT_PB_ADDR_C : std_logic_vector(ADDR_WIDTH-1 downto 0) :=
-        "10000000010100";  -- 0x2014
 
     signal key_level_w : std_logic_vector(2 downto 0);
     signal key_prev_q : std_logic_vector(2 downto 0);
     signal port_pb_cs_w : std_logic;
     signal port_pb_data_w : std_logic_vector(7 downto 0);
 begin
-    key_level_w <= KEY3 & KEY2 & KEY1;
 
-    ---------------------------------------------------------------------------
-    -- The board already debounces the keys.  key_prev_q is only edge history;
-    -- it is not a synchronizer stage.  Reset to released ('1') so reset release
-    -- cannot create a false falling-edge press event.
-    ---------------------------------------------------------------------------
+    key_level_w <= KEY3 & KEY2 & KEY1; -- creating the vector
+    --------------------------------------------------------------------------
     process (smclk, rst_i)
     begin
         if rst_i = '1' then
@@ -64,7 +57,7 @@ begin
     ---------------------------------------------------------------------------
     -- Read-only PORT_PB register, byte address 0x2014.
     ---------------------------------------------------------------------------
-    port_pb_cs_w <= '1' when Address = PORT_PB_ADDR_C else '0';
+    port_pb_cs_w <= '1' WHEN Address(13 DOWNTO 2) = x"805" ELSE '0';
     port_pb_data_w <= "0000" & key_level_w & '0';
 
     Data <= port_pb_data_w

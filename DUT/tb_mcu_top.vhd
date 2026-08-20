@@ -8,27 +8,12 @@
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
+use work.aux_package.all;
 
 entity tb_mcu_top is
 end entity tb_mcu_top;
 
 architecture sim of tb_mcu_top is
-
-    component mcu_top is
-        port (
-            rst_i    : in  std_logic;
-            clk_i    : in  std_logic;
-            divclk_i : in  std_logic;
-            SW       : in  std_logic_vector(7 downto 0);
-            LEDR     : out std_logic_vector(7 downto 0);
-            HEX0     : out std_logic_vector(6 downto 0);
-            HEX1     : out std_logic_vector(6 downto 0);
-            HEX2     : out std_logic_vector(6 downto 0);
-            HEX3     : out std_logic_vector(6 downto 0);
-            HEX4     : out std_logic_vector(6 downto 0);
-            HEX5     : out std_logic_vector(6 downto 0)
-        );
-    end component;
 
     -- Simulation-only clock periods (not tied to the real 50MHz baseclk).
     -- DIVCLK is kept faster than CLK, matching its role as the divider
@@ -50,8 +35,15 @@ begin
             rst_i    => rst_i,
             clk_i    => clk_i,
             divclk_i => divclk_i,
+            smclk    => clk_i,
+            KEY1     => '1',
+            KEY2     => '1',
+            KEY3     => '1',
+            CAPIN1   => '0',
+            CAPIN2   => '0',
             SW       => SW,
             LEDR     => LEDR,
+            PWM      => open,
             HEX0     => HEX0,
             HEX1     => HEX1,
             HEX2     => HEX2,

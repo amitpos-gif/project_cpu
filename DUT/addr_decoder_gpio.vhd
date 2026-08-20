@@ -7,11 +7,10 @@
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use work.gpio_pkg.all;
 
 entity addr_decoder_gpio is
     port (
-        Address  : in  std_logic_vector(ADDR_WIDTH-1 downto 0);
+        Address  : in  std_logic_vector(13 downto 0);
         CS_LEDR  : out std_logic;  -- 0x2000
         CS_HEX01 : out std_logic;  -- 0x2004 / 0x2005
         CS_HEX23 : out std_logic;  -- 0x2008 / 0x2009
@@ -21,9 +20,9 @@ entity addr_decoder_gpio is
 end entity addr_decoder_gpio;
 
 architecture rtl of addr_decoder_gpio is
-    signal word_addr : std_logic_vector(ADDR_WIDTH-1 downto 2);
+    signal word_addr : std_logic_vector(13 downto 2);
 begin
-    word_addr <= Address(ADDR_WIDTH-1 downto 2);
+    word_addr <= Address(13 downto 2);
 
     CS_LEDR  <= '1' when word_addr = x"800" else '0';
     CS_HEX01 <= '1' when word_addr = x"801" else '0';
