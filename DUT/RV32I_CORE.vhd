@@ -60,29 +60,29 @@ END RV32I_CORE;
 --============================================================================
 ARCHITECTURE structure OF RV32I_CORE IS
 	-- declare signals used to connect VHDL components
-	SIGNAL pc_w 					: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-	SIGNAL pc_plus4_w 		: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-	SIGNAL read_data1_w 	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL read_data2_w 	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL sign_extend_w 	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL addr_gen_w 		: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
+	SIGNAL pc_w 				: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
+	SIGNAL pc_plus4_w 			: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
+	SIGNAL read_data1_w 		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL read_data2_w 		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL sign_extend_w 		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL addr_gen_w 			: STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 	SIGNAL alu_res_w 			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL dtcm_data_rd_w : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL dtcm_addr_w 		: STD_LOGIC_VECTOR(DTCM_ADDR_WIDTH-1 DOWNTO 0);
+	SIGNAL dtcm_data_rd_w 		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL dtcm_addr_w 			: STD_LOGIC_VECTOR(DTCM_ADDR_WIDTH-1 DOWNTO 0);
 	SIGNAL alu_src_w 			: STD_LOGIC;
 	SIGNAL branch_w 			: STD_LOGIC;
-	SIGNAL Jal_ctrl_w 		: STD_LOGIC;
-	SIGNAL Jalr_ctrl_w 		: STD_LOGIC;
-	SIGNAL reg_write_ctrl_w : STD_LOGIC;
-	SIGNAL reg_write_w 		: STD_LOGIC;
+	SIGNAL Jal_ctrl_w 			: STD_LOGIC;
+	SIGNAL Jalr_ctrl_w 			: STD_LOGIC;
+	SIGNAL reg_write_ctrl_w 	: STD_LOGIC;
+	SIGNAL reg_write_w 			: STD_LOGIC;
 	SIGNAL reg_dst_w 			: STD_LOGIC;
 	SIGNAL brTaken_w 			: STD_LOGIC;
-	SIGNAL mem_write_w 		: STD_LOGIC;
-	SIGNAL MemtoReg_w 		: STD_LOGIC;
-	SIGNAL mem_read_w 		: STD_LOGIC;
+	SIGNAL mem_write_w 			: STD_LOGIC;
+	SIGNAL MemtoReg_w 			: STD_LOGIC;
+	SIGNAL mem_read_w 			: STD_LOGIC;
 	SIGNAL upper_im_w			: STD_LOGIC_VECTOR(1 DOWNTO 0);
 	SIGNAL alu_op_w 			: STD_LOGIC_VECTOR(4 DOWNTO 0);
-	SIGNAL instruction_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL instruction_w		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL mclk_w 				: STD_LOGIC;
 	SIGNAL mclk_cnt_q			: STD_LOGIC_VECTOR(CLK_CNT_WIDTH-1 DOWNTO 0);
 	-- #RV32IM task: MUL internal wires
@@ -92,34 +92,34 @@ ARCHITECTURE structure OF RV32I_CORE IS
 	SIGNAL mul_res_w 			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);  -- MUL result to IDECODE
 	-- Divider datapath and control signals
 	SIGNAL div_op_w				: STD_LOGIC;
-	SIGNAL pc_hold_ctrl_w	: STD_LOGIC;
+	SIGNAL pc_hold_ctrl_w		: STD_LOGIC;
 	SIGNAL pc_hold_w			: STD_LOGIC;
 	SIGNAL div_ain_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL div_bin_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL quotient_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL remainder_w			: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL div_busy_w			: STD_LOGIC;
-	SIGNAL div_stall_w		: STD_LOGIC;
+	SIGNAL div_stall_w			: STD_LOGIC;
 	SIGNAL div_stage_q			: STD_LOGIC_VECTOR(2 DOWNTO 0);
 	SIGNAL div_rst_q			: STD_LOGIC;
 	SIGNAL div_ena_q			: STD_LOGIC;
 	SIGNAL accelerator_res_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	SIGNAL execution_res_w		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL is_io_addr_w		: STD_LOGIC;
-	SIGNAL dtcm_write_w		: STD_LOGIC;
-	SIGNAL wb_dtcm_data_w	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL is_io_addr_w			: STD_LOGIC;
+	SIGNAL dtcm_write_w			: STD_LOGIC;
+	SIGNAL wb_dtcm_data_w		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 	-- Interrupt protocol datapath/control signals
-	SIGNAL irq_hold_w       : STD_LOGIC;
-	SIGNAL irq_service_w    : STD_LOGIC;
-	SIGNAL irq_type_w       : STD_LOGIC_VECTOR(7 DOWNTO 0);
-	SIGNAL irq_type_addr_w  : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL gie_clear_w      : STD_LOGIC;
-	SIGNAL gie_set_w        : STD_LOGIC;
-	SIGNAL gie_w            : STD_LOGIC;
-	SIGNAL inta_w           : STD_LOGIC;
-	SIGNAL data_addr_w      : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL ifetch_target_w  : STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL ifetch_jalr_w    : STD_LOGIC;
+	SIGNAL irq_hold_w       	: STD_LOGIC;
+	SIGNAL irq_service_w    	: STD_LOGIC;
+	SIGNAL irq_type_w       	: STD_LOGIC_VECTOR(7 DOWNTO 0);
+	SIGNAL irq_type_addr_w  	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL gie_clear_w      	: STD_LOGIC;
+	SIGNAL gie_set_w       		: STD_LOGIC;
+	SIGNAL gie_w           		: STD_LOGIC;
+	SIGNAL inta_w           	: STD_LOGIC;
+	SIGNAL data_addr_w      	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL ifetch_target_w  	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+	SIGNAL ifetch_jalr_w    	: STD_LOGIC;
 
 	CONSTANT DIV_IDLE_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "000";
 	CONSTANT DIV_LOAD_C			: STD_LOGIC_VECTOR(2 DOWNTO 0) := "001";
@@ -246,16 +246,16 @@ BEGIN
 		GIEset_ctrl_o         => gie_set_w
 	);
 
-	-- Stall immediately on decode and keep the instruction until the complete
-	-- stage. This covers the delay before synchronized DIVBUSY becomes high.
+	-- Stall immediately on decode and keep the instruction until the complete stage. This covers the delay before synchronized DIVBUSY becomes high.
 	div_stall_w <= '0' WHEN div_stage_q = DIV_COMPLETE_C ELSE div_op_w;
 	pc_hold_w  <= pc_hold_ctrl_w OR div_stall_w OR irq_hold_w;
 	reg_write_w <= reg_write_ctrl_w AND NOT div_stall_w;
 
 	-- Cycle 2 reuses the existing JALR input of IFETCH.  The target is the
 	-- handler address read from the vector table at Memory[TYPE].
+	-- " FAKE " JALR when interrupt service cycle 2.
 	ifetch_jalr_w   <= Jalr_ctrl_w OR irq_service_w;
-	ifetch_target_w <= dtcm_data_rd_w WHEN irq_service_w = '1' ELSE alu_res_w;
+	ifetch_target_w <= dtcm_data_rd_w WHEN irq_service_w = '1' ELSE alu_res_w;  
 	--=======================================
 	-- EXECUTE module connection
 	--=======================================
@@ -375,8 +375,8 @@ BEGIN
 	--=======================================
 	-- DTCM module connection
 	--=======================================
-	-- During interrupt cycle 2, TYPE is the byte address of the vector-table
-	-- entry. Otherwise the ordinary ALU result supplies the data address.
+	-- During interrupt cycle 2, TYPE is the byte address of the vector-table entry - that is actialy in the main ITCM adress. 
+	-- Otherwise the ordinary ALU result supplies the data address.
 	irq_type_addr_w <= (DATA_BUS_WIDTH-1 DOWNTO 8 => '0') & irq_type_w;
 	data_addr_w     <= irq_type_addr_w WHEN irq_service_w = '1' ELSE alu_res_w;
 

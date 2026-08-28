@@ -1,7 +1,7 @@
 -------------------------------------------------------------------------------
 -- interrupt_controller.vhd
 --
--- Required (non-bonus) interrupt controller:
+-- Required interrupt controller:
 --   IFG(2) = Basic Timer, TYPE 0x10, highest maskable priority
 --   IFG(3) = KEY1,        TYPE 0x14
 --   IFG(4) = KEY2,        TYPE 0x18
@@ -19,35 +19,35 @@ ENTITY interrupt_controller IS
         smclk_i      : IN  STD_LOGIC;
         rst_i        : IN  STD_LOGIC;
 
-        IE_we_i      : IN  STD_LOGIC;
-        IFG_we_i     : IN  STD_LOGIC;
-        reg_data_i   : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+        IE_we_i      : IN  STD_LOGIC;  -- write enable for IE register
+        IFG_we_i     : IN  STD_LOGIC;  -- write enable for IFG register
+        reg_data_i   : IN  STD_LOGIC_VECTOR(7 DOWNTO 0); -- data bus for IE/IFG writes
 
-        BTIFG_i      : IN  STD_LOGIC;
-        KEY_irq_i    : IN  STD_LOGIC_VECTOR(2 DOWNTO 0);
+        BTIFG_i      : IN  STD_LOGIC; -- active-high basic timer interrupt request
+        KEY_irq_i    : IN  STD_LOGIC_VECTOR(2 DOWNTO 0); -- active-high pushbutton interrupt requests
 
-        GIE_i        : IN  STD_LOGIC;
-        INTA_i       : IN  STD_LOGIC; -- active-low interrupt acknowledge
+        GIE_i        : IN  STD_LOGIC;  -- global interrupt enable
+        INTA_i       : IN  STD_LOGIC; -- active-low interrupt acknowledge, from cpu_top
 
-        IE_o         : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-        IFG_o        : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-        TYPE_o       : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-        INTR_o       : OUT STD_LOGIC
+        IE_o         : OUT STD_LOGIC_VECTOR(7 DOWNTO 0); -- going to the CPU, interrupt-enable register
+        IFG_o        : OUT STD_LOGIC_VECTOR(7 DOWNTO 0); -- going to the CPU, interrupt-flag register
+        TYPE_o       : OUT STD_LOGIC_VECTOR(7 DOWNTO 0); -- going to the CPU, interrupt-type register
+        INTR_o       : OUT STD_LOGIC -- active-high interrupt request, to cpu_top
     );
 END ENTITY interrupt_controller;
 
 ARCHITECTURE rtl OF interrupt_controller IS
-    SIGNAL ie_q            : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL ifg_q           : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL type_q          : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL pending_w       : STD_LOGIC_VECTOR(7 DOWNTO 0);
-    SIGNAL inta_prev_q     : STD_LOGIC;
-    SIGNAL btifg_prev_q    : STD_LOGIC;
+    SIGNAL ie_q            : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- interrupt-enable register
+    SIGNAL ifg_q           : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- interrupt-flag register
+    SIGNAL type_q          : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- interrupt-type register
+    SIGNAL pending_w       : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- pending interrupt sources, ie AND ifg
+    SIGNAL inta_prev_q     : STD_LOGIC;                     -- previous sample of INTA, to detect rising edge
+    SIGNAL btifg_prev_q    : STD_LOGIC;                     -- previous sample of BTIFG, to detect rising edge
 BEGIN
     PROCESS (smclk_i, rst_i)
-        VARIABLE ie_v      : STD_LOGIC_VECTOR(7 DOWNTO 0);
-        VARIABLE ifg_v     : STD_LOGIC_VECTOR(7 DOWNTO 0);
-        VARIABLE pending_v : STD_LOGIC_VECTOR(7 DOWNTO 0);
+        VARIABLE ie_v      : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- next value of ie_q
+        VARIABLE ifg_v     : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- next value of ifg_q
+        VARIABLE pending_v : STD_LOGIC_VECTOR(7 DOWNTO 0);  -- next value of pending_w
     BEGIN
         IF rst_i = '1' THEN
             ie_q         <= (OTHERS => '0');
@@ -57,7 +57,8 @@ BEGIN
             btifg_prev_q <= '0';
 
         ELSIF rising_edge(smclk_i) THEN
-            ie_v  := ie_q;
+        -- load the current values of the registers into the variables, to be updated below
+            ie_v  := ie_q;      
             ifg_v := ifg_q;
 
             -- IE and IFG are byte-wide software read/write registers.  Only
@@ -70,20 +71,17 @@ BEGIN
                 ifg_v := "00" & reg_data_i(5 DOWNTO 2) & "00";
             END IF;
 
-            -- Clear a synchronous Basic-Timer request only after cycle 1 has
-            -- finished.  The rising edge of active-low INTA means that the CPU
-            -- has already captured TYPE; clearing on INTA's falling edge could
-            -- erase TYPE before that capture when SMCLK is faster than MCLK.
-            -- KEY flags are cleared by their ISRs through a write to IFG.
+            -- Clear a synchronous Basic-Timer request only after cycle 1 has finished - cpu has interapt, no humen presing the button, can by cleared synchronous  
             IF inta_prev_q = '0' AND INTA_i = '1' AND type_q = x"10" THEN
                 ifg_v(2) := '0';
             END IF;
 
             -- Source events have priority over a simultaneous software/ack
             -- clear, preventing a new event from being lost.
+            -- main file is clening ifg(2) when he pudh 0 to the addressed of the ifg at the end og ISR KEY_J , J:={1,2,3}
             IF BTIFG_i = '1' AND btifg_prev_q = '0' THEN
                 ifg_v(2) := '1';
-            END IF;
+            END IF;                                     
 
             IF KEY_irq_i(0) = '1' THEN
                 ifg_v(3) := '1';
@@ -97,7 +95,7 @@ BEGIN
                 ifg_v(5) := '1';
             END IF;
 
-            -- Force all unimplemented UART/reserved bits to zero.
+            -- Force all BONOS option from hanan that we didnt implemented "UART/reserved bits" to zero.
             ie_v(7 DOWNTO 6)  := "00";
             ie_v(1 DOWNTO 0)  := "00";
             ifg_v(7 DOWNTO 6) := "00";
@@ -110,26 +108,23 @@ BEGIN
             inta_prev_q    <= INTA_i;
             btifg_prev_q   <= BTIFG_i;
 
-            -- Priority encoder: Timer, KEY1, KEY2, KEY3.
-            IF pending_v(2) = '1' THEN
-                type_q <= x"10";
-            ELSIF pending_v(3) = '1' THEN
-                type_q <= x"14";
-            ELSIF pending_v(4) = '1' THEN
-                type_q <= x"18";
-            ELSIF pending_v(5) = '1' THEN
-                type_q <= x"1C";
-            ELSE
-                type_q <= x"00";
+            -- Priority encoder: Timer, KEY1, KEY2, KEY3  := ho is the type of the highest-priority pending interrupt source.
+            IF    pending_v(2) = '1'  THEN type_q <= x"10";
+            ELSIF pending_v(3) = '1'  THEN type_q <= x"14";
+            ELSIF pending_v(4) = '1'  THEN type_q <= x"18";
+            ELSIF pending_v(5) = '1'  THEN type_q <= x"1C";
+            ELSE  type_q <= x"00";
             END IF;
+
         END IF;
     END PROCESS;
 
     pending_w <= ie_q AND ifg_q;
 
-    INTR_o <= GIE_i AND
-              (pending_w(2) OR pending_w(3) OR
-               pending_w(4) OR pending_w(5));
+    INTR_o <= GIE_i AND (pending_w(2) 
+                        OR pending_w(3)
+                        OR pending_w(4) 
+                        OR pending_w(5));
 
     IE_o   <= ie_q;
     IFG_o  <= ifg_q;

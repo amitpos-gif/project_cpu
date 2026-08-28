@@ -55,10 +55,10 @@ package cond_compilation_package is
 	constant G_PC_WIDTH 				: integer := PC_WIDTH_TCM8KiB;			-- options{PC_WIDTH_TCM1KiB,PC_WIDTH_TCM2KiB,...}
 	constant G_MA_WIDTH 				: integer := MA_WIDTH_TCM8KiB;			-- options{MA_WIDTH_TCM1KiB,MA_WIDTH_TCM2KiB,...}
 	constant DBUS_WIDTH 				: integer	:= 32;
-	constant G_PLL_DIV		 			: NATURAL	:= 5;											-- relavant only when G_MODELSIM=0
-	constant G_PLL_MUL		 			: NATURAL	:= 3;	
-	constant G_SMCLK_PLL_DIV		 	: NATURAL	:= 5;											-- relavant only when G_MODELSIM=0
-	constant G_SMCLK_PLL_MUL		 	: NATURAL	:= 3;
+	constant G_PLL_DIV		 			: NATURAL	:= 2;											-- relavant only when G_MODELSIM=0
+	constant G_PLL_MUL		 			: NATURAL	:= 1;	
+	constant G_SMCLK_PLL_DIV		 	: NATURAL	:= 2;											-- relavant only when G_MODELSIM=0
+	constant G_SMCLK_PLL_MUL		 	: NATURAL	:= 1;
 	constant G_DIVCLK_PLL_DIV		 	: NATURAL	:= 2;											-- relavant only when G_MODELSIM=0
 	constant G_DIVCLK_PLL_MUL		 	: NATURAL	:= 5;
 

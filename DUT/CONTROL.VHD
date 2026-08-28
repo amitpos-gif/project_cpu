@@ -13,39 +13,41 @@ USE work.const_package.all;
 ENTITY control IS
   PORT( 
 		--Inputs
-		clk_i                 : IN  STD_LOGIC;
-		rst_i                 : IN  STD_LOGIC;
-		instruction_i 		: IN 	STD_LOGIC_VECTOR(31 DOWNTO 0);
-		DIVbusy_ctrl_i		: IN	STD_LOGIC;
-		DIVstall_ctrl_i       : IN  STD_LOGIC;
-		INTR_ctrl_i           : IN  STD_LOGIC;
-		TYPEdata_ctrl_i       : IN  STD_LOGIC_VECTOR(7 DOWNTO 0);
+		clk_i                 	: IN  STD_LOGIC;  
+		-- now its a small fsm - sequential logic, so we need a clock to sample the instruction and the interrupt signals
+		-- The interrupt protocol takes 2 cycles, so something has to remember which cycle you're in. Control is the only place that can.
+		rst_i                 	: IN  STD_LOGIC;  -- reset signal from the cpu_top module
+		instruction_i 		  	: IN 	STD_LOGIC_VECTOR(31 DOWNTO 0);
+		DIVbusy_ctrl_i		  	: IN	STD_LOGIC;  -- A divide may write only when the accelerator is no longer busy.
+		DIVstall_ctrl_i       	: IN  STD_LOGIC;	-- do not let anther interapt to occur while the divider is busy
+		INTR_ctrl_i           	: IN  STD_LOGIC;	-- interrupt request from the interrupt controller
+		TYPEdata_ctrl_i       	: IN  STD_LOGIC_VECTOR(7 DOWNTO 0);	-- type off the data bus
 		
 		--Outputs
-		RegDst_ctrl_o 		: OUT 	STD_LOGIC;
-		ALUSrc_ctrl_o 		: OUT 	STD_LOGIC;
-		MemtoReg_ctrl_o 	: OUT 	STD_LOGIC;
-		RegWrite_ctrl_o 	: OUT 	STD_LOGIC;
-		MemRead_ctrl_o 		: OUT 	STD_LOGIC;
-		MemWrite_ctrl_o	 	: OUT 	STD_LOGIC;
-		Branch_ctrl_o 		: OUT 	STD_LOGIC;
+		RegDst_ctrl_o 			: OUT 	STD_LOGIC;	-- 
+		ALUSrc_ctrl_o 			: OUT 	STD_LOGIC;
+		MemtoReg_ctrl_o 		: OUT 	STD_LOGIC;
+		RegWrite_ctrl_o 		: OUT 	STD_LOGIC;
+		MemRead_ctrl_o 			: OUT 	STD_LOGIC;
+		MemWrite_ctrl_o	 		: OUT 	STD_LOGIC;
+		Branch_ctrl_o 			: OUT 	STD_LOGIC;
 		Jal_ctrl_o 				: OUT 	STD_LOGIC;
 		Jalr_ctrl_o 			: OUT 	STD_LOGIC;
-		UpperIm_ctrl_o		: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
+		UpperIm_ctrl_o			: OUT 	STD_LOGIC_VECTOR(1 DOWNTO 0);
 		ALUOp_ctrl_o	 		: OUT 	STD_LOGIC_VECTOR(4 DOWNTO 0);
 		-- #RV32IM task: MULOp enables MUL component
 		MULOp_ctrl_o			: OUT 	STD_LOGIC;
 		-- Divider control and the two cascaded write-back mux selectors
 		DIVOp_ctrl_o			: OUT	STD_LOGIC;
-		PChold_ctrl_o		: OUT	STD_LOGIC;
-		WBSrc0_ctrl_o		: OUT	STD_LOGIC;
-		WBSrc1_ctrl_o		: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0);
-		INTA_ctrl_o           : OUT STD_LOGIC;
-		IRQhold_ctrl_o        : OUT STD_LOGIC;
-		IRQservice_ctrl_o     : OUT STD_LOGIC;
-		IRQtype_ctrl_o        : OUT STD_LOGIC_VECTOR(7 DOWNTO 0);
-		GIEclear_ctrl_o       : OUT STD_LOGIC;
-		GIEset_ctrl_o         : OUT STD_LOGIC
+		PChold_ctrl_o			: OUT	STD_LOGIC;
+		WBSrc0_ctrl_o			: OUT	STD_LOGIC;
+		WBSrc1_ctrl_o			: OUT	STD_LOGIC_VECTOR(1 DOWNTO 0);
+		INTA_ctrl_o           	: OUT STD_LOGIC;  	-- acknowledge, active low, to the CPU
+		IRQhold_ctrl_o        	: OUT STD_LOGIC;  	-- freeze PC
+		IRQservice_ctrl_o     	: OUT STD_LOGIC;	-- cycle 2 marker
+		IRQtype_ctrl_o        	: OUT STD_LOGIC_VECTOR(7 DOWNTO 0);  -- latched TYPE
+		GIEclear_ctrl_o       	: OUT STD_LOGIC;	-- gp[0] ← 0
+		GIEset_ctrl_o         	: OUT STD_LOGIC		-- gp[0] ← 1 on reti
 	);
 END control;
 
@@ -59,46 +61,47 @@ ARCHITECTURE behavior OF control IS
 	SIGNAL	srl_w, srli_w, sub_w, xor_w, xori_w, auipc_w, lui_w, slt_w, slti_w, sltu_w, sltiu_w	: STD_LOGIC;
 	SIGNAL	divu_w, remu_w, divop_w																						: STD_LOGIC;
 	SIGNAL	reg_write_base_w																							: STD_LOGIC;
-		SIGNAL  opc_w : STD_LOGIC_VECTOR(6 DOWNTO 0);
-		SIGNAL  irq_state_q  : STD_LOGIC_VECTOR(1 DOWNTO 0);
-		SIGNAL  irq_type_q   : STD_LOGIC_VECTOR(7 DOWNTO 0);
-		SIGNAL  irq_active_w : STD_LOGIC;
-		CONSTANT IRQ_IDLE_C    : STD_LOGIC_VECTOR(1 DOWNTO 0) := "00";
-		CONSTANT IRQ_ACK_C     : STD_LOGIC_VECTOR(1 DOWNTO 0) := "01";
-		CONSTANT IRQ_SERVICE_C : STD_LOGIC_VECTOR(1 DOWNTO 0) := "10";
-		CONSTANT INST_RETI_C   : STD_LOGIC_VECTOR(31 DOWNTO 0) := x"00020067";
+	SIGNAL  opc_w : STD_LOGIC_VECTOR(6 DOWNTO 0);
+	-- addional signals for the interrupt controller
+	SIGNAL  irq_state_q  : STD_LOGIC_VECTOR(1 DOWNTO 0); 					-- FSM state for the interrupt controller
+	SIGNAL  irq_type_q   : STD_LOGIC_VECTOR(7 DOWNTO 0); 					-- latched TYPE of the interrupt request
+	SIGNAL  irq_active_w : STD_LOGIC;					 					-- high when the FSM is in either of the two interrupt-service states
+	CONSTANT IRQ_IDLE_C    : STD_LOGIC_VECTOR(1 DOWNTO 0) := "00";			-- idle state constant, no interrupt request
+	CONSTANT IRQ_ACK_C     : STD_LOGIC_VECTOR(1 DOWNTO 0) := "01";			-- acknowledge state constant, first cycle of the interrupt-service protocol
+	CONSTANT IRQ_SERVICE_C : STD_LOGIC_VECTOR(1 DOWNTO 0) := "10";			-- service state constant, second cycle of the interrupt-service protocol
+	CONSTANT INST_RETI_C   : STD_LOGIC_VECTOR(31 DOWNTO 0) := x"00020067";	-- the instruction for the RETI instruction (jalr zero, 0(tp)), used to detect when the CPU is returning from an interrupt service routine
 
 	BEGIN
 		-- Two-cycle interrupt-service controller from the project protocol.
 		PROCESS(clk_i, rst_i)
 		BEGIN
 			IF rst_i = '1' THEN
-				irq_state_q <= IRQ_IDLE_C;
-				irq_type_q  <= (OTHERS => '0');
+				irq_state_q <= IRQ_IDLE_C;		 -- reset the FSM to the idle state		
+				irq_type_q  <= (OTHERS => '0');	 -- reset the latched TYPE to 0
 			ELSIF rising_edge(clk_i) THEN
 				CASE irq_state_q IS
-					WHEN IRQ_IDLE_C =>
-						IF INTR_ctrl_i = '1' AND DIVstall_ctrl_i = '0' THEN
-							irq_state_q <= IRQ_ACK_C;
+					WHEN IRQ_IDLE_C =>           -- idle state, waiting for an interrupt request , " INTR_ctrl_i = '1' " mean that an interrupt is pending
+						IF INTR_ctrl_i = '1' AND DIVstall_ctrl_i = '0' THEN  -- if there is an interrupt request and the divider is not busy, then we can accept the interrupt request!
+							irq_state_q <= IRQ_ACK_C;  -- moving the state to the acknowledge state, which will be held for one clock cycle
 						END IF;
 					WHEN IRQ_ACK_C =>
-						irq_type_q  <= TYPEdata_ctrl_i;
-						irq_state_q <= IRQ_SERVICE_C;
+						irq_type_q  <= TYPEdata_ctrl_i;  -- if we at ack state, latch the TYPE to irq_type_q register, used to drive the TYPE data bus during the ack protocol
+						irq_state_q <= IRQ_SERVICE_C;	 -- move to the service state, which will be held for one clock cycle
 					WHEN IRQ_SERVICE_C =>
-						irq_state_q <= IRQ_IDLE_C;
+						irq_state_q <= IRQ_IDLE_C;       -- 
 					WHEN OTHERS =>
 						irq_state_q <= IRQ_IDLE_C;
 				END CASE;
 			END IF;
 		END PROCESS;
 
-		irq_active_w      <= '0' WHEN irq_state_q = IRQ_IDLE_C ELSE '1';
-		INTA_ctrl_o       <= '0' WHEN irq_state_q = IRQ_ACK_C ELSE '1';
-		IRQhold_ctrl_o    <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';
-		IRQservice_ctrl_o <= '1' WHEN irq_state_q = IRQ_SERVICE_C ELSE '0';
-		GIEclear_ctrl_o   <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';
-		GIEset_ctrl_o     <= '1' WHEN irq_state_q = IRQ_IDLE_C AND
-		                                  instruction_i = INST_RETI_C ELSE '0';
+		irq_active_w      <= '0' WHEN irq_state_q = IRQ_IDLE_C ELSE '1';	-- high when the FSM is in either of the two interrupt-service states
+		INTA_ctrl_o       <= '0' WHEN irq_state_q = IRQ_ACK_C ELSE '1';		-- low for one clock cycle when the FSM is in the acknowledge state
+		IRQhold_ctrl_o    <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';		-- high for one clock cycle when the FSM is in the acknowledge state, to freeze the PC
+		IRQservice_ctrl_o <= '1' WHEN irq_state_q = IRQ_SERVICE_C ELSE '0';	-- high for one clock cycle when the FSM is in the service state, to indicate that the CPU is executing the interrupt service routine
+		GIEclear_ctrl_o   <= '1' WHEN irq_state_q = IRQ_ACK_C ELSE '0';		-- high for one clock cycle when the FSM is in the acknowledge state, to clear the GIE bit in gp (x3), so no looping from to interrpt and losing the ra to the main code
+		GIEset_ctrl_o     <= '1' WHEN irq_state_q = IRQ_IDLE_C AND			-- set the GIE bit in gp (x3) when the FSM is in the idle state and the instruction is RETI, to re-enable interrupts after returning from an interrupt service routine 
+		                              instruction_i = INST_RETI_C ELSE '0';
 		IRQtype_ctrl_o    <= irq_type_q;
 
 		opc_w 		<=	instruction_i(6 DOWNTO 0);
@@ -191,7 +194,9 @@ ARCHITECTURE behavior OF control IS
 	divop_w	<=	divu_w OR remu_w;
 
 	reg_write_base_w	<= Rtype_w OR Itype_w OR Utype_w OR UJtype_w;
-	-- A divide may write only when the accelerator is no longer busy. 
+
+	-- Control signal assignments, with interrupt-service FSM gating for all signals that should be disabled during interrupt service.
+	-- RegWrite_ctrl_o ulso cont get if the divider is busy, because the divider is a multi-cycle operation 
 		RegWrite_ctrl_o 	<= reg_write_base_w AND NOT (divop_w AND DIVbusy_ctrl_i)
 		                         AND NOT irq_active_w;
 		MemtoReg_ctrl_o 	<=  ld_w;

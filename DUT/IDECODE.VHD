@@ -133,13 +133,15 @@ BEGIN
 				RF_q(i) <= CONV_STD_LOGIC_VECTOR(0,DATA_BUS_WIDTH);
 			END LOOP;
 		elsif (clk_i'event and clk_i='1') then
+			-- cycle 1 of interrupt service routine, clear GIE bit in gp (x3)
 			-- GIE is bit 0 of gp (x3).
-			if IRQ_clear_gie_i = '1' then
+			if IRQ_clear_gie_i = '1' then   
 				RF_q(3)(0) <= '0';
 			elsif IRQ_set_gie_i = '1' then
 				RF_q(3)(0) <= '1';
 			end if;
 
+			-- cycle 2 of interrupt service routine, driven by irq_service_w (SERVICE), save the return PC in tp (x4) for the RETI instruction to use.
 			-- Hardware interrupt entry saves the return PC in tp (x4).
 			if IRQ_save_tp_i = '1' then
 				RF_q(4) <= ZEROS_DBUS2PCADDR & IRQ_return_pc_i;

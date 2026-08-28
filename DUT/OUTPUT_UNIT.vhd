@@ -31,7 +31,7 @@ Architecture struct of OUTPUT_UNIT is
 ---------------------------------------------------------------
 begin
 
-    equ_btcl0_w <= '1' when (timer_i = Y_i) else '0';
+    equ_btcl0_w <= '1' when (timer_i >= Y_i) else '0';
     equ_btcl1_w <= '1' when (timer_i = X_i) else '0';
     equy_out <= equ_btcl0_w;
     equx_out <= equ_btcl1_w;

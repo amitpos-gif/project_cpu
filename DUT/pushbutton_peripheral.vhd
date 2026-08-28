@@ -1,64 +1,52 @@
 -------------------------------------------------------------------------------
 -- pushbutton_peripheral.vhd
---
--- KEY1-KEY3 input peripheral from Figure 6.
---
--- The DE10-Standard pushbuttons are active low and are hardware debounced by
--- the board interface.  This block exposes their levels through the byte-wide
--- PORT_PB register at 0x2014 and emits a one-SMCLK-cycle event for each new
--- button press.  The future interrupt
--- controller latches these events into KEY1IFG/KEY2IFG/KEY3IFG.
---
--- PORT_PB layout:
---   bit 3 = KEY3 level, bit 2 = KEY2 level, bit 1 = KEY1 level, bit 0 = 0
---   bits 7..4 = 0.  A pressed key reads as 0 (the physical active-low level).
+-- KEY1-KEY3 input peripheral 
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 
 entity pushbutton_peripheral is
     port (
-        smclk      : in    std_logic;
-        rst_i      : in    std_logic;
-        Address    : in    std_logic_vector(13 downto 0);
-        Data       : inout std_logic_vector(7 downto 0);
-        MemRead    : in    std_logic;
+        smclk      : in    std_logic; -- coming from the PLL, 50MHz
+        rst_i      : in    std_logic; -- coming from the CPU, active high key0
+        Address    : in    std_logic_vector(13 downto 0); -- coming from the CPU, address bus
+        Data       : inout std_logic_vector(7 downto 0); -- coming from the CPU, data bus
+        MemRead    : in    std_logic; -- coming from the control, active high
 
-        KEY1       : in    std_logic;
-        KEY2       : in    std_logic;
-        KEY3       : in    std_logic;
+        KEY1       : in    std_logic; -- coming from the board
+        KEY2       : in    std_logic; -- coming from the board 
+        KEY3       : in    std_logic; -- coming from the board
 
-        key_irq_o  : out   std_logic_vector(2 downto 0)
+        key_irq_o  : out   std_logic_vector(2 downto 0) -- going to the CPU, interrupt-request output.
     );
 end entity pushbutton_peripheral;
 
 architecture rtl of pushbutton_peripheral is
 
-    signal key_level_w : std_logic_vector(2 downto 0);
-    signal key_prev_q : std_logic_vector(2 downto 0);
-    signal port_pb_cs_w : std_logic;
-    signal port_pb_data_w : std_logic_vector(7 downto 0);
+    signal key_level_wire : std_logic_vector(2 downto 0); -- 3-bit vector of the current level of the pushbuttons
+    signal key_prev_q : std_logic_vector(2 downto 0);     -- 3 FF flip-flops to synchronize the pushbutton inputs to the smclk domain
+    signal port_pb_cs_w : std_logic;                      -- chip select for the pushbutton peripheral
+    signal port_pb_data_w : std_logic_vector(7 downto 0); -- data to be read from the pushbutton peripheral
 begin
 
-    key_level_w <= KEY3 & KEY2 & KEY1; -- creating the vector
+    key_level_wire <= KEY3 & KEY2 & KEY1; -- creating the vector of status of the pushbuttons
     --------------------------------------------------------------------------
     process (smclk, rst_i)
     begin
         if rst_i = '1' then
-            key_prev_q <= (others => '1');
-            key_irq_o  <= (others => '0');
+            key_prev_q <= (others => '1'); --- 111 means that the pushbuttons are not pressed, because they are active low
+            key_irq_o  <= (others => '0'); --- 000 means that no interrupt is requested
         elsif rising_edge(smclk) then
-            -- Active-low press: previous sample released, current sample low.
-            key_irq_o  <= key_prev_q and not key_level_w;
-            key_prev_q <= key_level_w;
+            key_irq_o  <= key_prev_q and not key_level_wire;
+            key_prev_q <= key_level_wire;
         end if;
     end process;
 
     ---------------------------------------------------------------------------
     -- Read-only PORT_PB register, byte address 0x2014.
     ---------------------------------------------------------------------------
-    port_pb_cs_w <= '1' WHEN Address(13 DOWNTO 2) = x"805" ELSE '0';
-    port_pb_data_w <= "0000" & key_level_w & '0';
+    port_pb_cs_w <= '1' WHEN Address(13 DOWNTO 2) = x"805" ELSE '0'; -- 0x2014 is the address of the pushbutton peripheral, coresponding 12 bits ois x"805" (0x2014 shifted right by 2 bits).
+    port_pb_data_w <= "0000" & key_level_wire & '0'; -- 
 
     Data <= port_pb_data_w
             when MemRead = '1' and port_pb_cs_w = '1'
