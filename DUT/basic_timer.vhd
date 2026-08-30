@@ -77,7 +77,6 @@ ARCHITECTURE structural OF basic_timer IS
     SIGNAL capture_toggle_sync_q  : STD_LOGIC;
     SIGNAL capture_toggle_prev_q  : STD_LOGIC;
     SIGNAL capture_event_pulse_w  : STD_LOGIC;
-    SIGNAL capture_armed_q        : STD_LOGIC;
 
     SIGNAL pwmout_w       : STD_LOGIC;
 BEGIN
@@ -94,7 +93,6 @@ BEGIN
             btcmpr1_q <= (OTHERS => '0');
             btcapr_q  <= (OTHERS => '0');
             clk_div_q <= (OTHERS => '0');
-            capture_armed_q <= '0';
 
         ELSIF rising_edge(smclk_i) THEN
             clk_div_q <= clk_div_q + 1;
@@ -105,12 +103,6 @@ BEGIN
 
             IF BTCTL2_we_i = '1' THEN
                 btctl2_q <= "0000" & reg_data_i(3 DOWNTO 0);
-                -- Ignore the artificial edge that the new CAPMD/CAPISEL
-                -- configuration can create in cap_trigger_w.
-                capture_armed_q <= '0';
-            ELSE
-                -- Re-arm after the new capture configuration has settled.
-                capture_armed_q <= '1';
             END IF;
 
             IF BTCMPR0_we_i = '1' THEN
@@ -191,10 +183,12 @@ BEGIN
             capture_shadow_q       <= (OTHERS => '0');
             capture_event_toggle_q <= '0';
         ELSIF rising_edge(cap_trigger_w) THEN
-            IF capture_armed_q = '1' THEN
-                capture_shadow_q       <= btcnt_w;
-                capture_event_toggle_q <= NOT capture_event_toggle_q;
-            END IF;
+            -- Every edge on cap_trigger_w is a capture event, including the one
+            -- the CPU creates by moving CAPISEL from GND to VCC.  That mux move
+            -- IS the software-triggered capture the benchmark firmware relies on
+            -- (BTCTL2 07h -> 06h), so it must never be filtered out here.
+            capture_shadow_q       <= btcnt_w;
+            capture_event_toggle_q <= NOT capture_event_toggle_q;
         END IF;
     END PROCESS;
 

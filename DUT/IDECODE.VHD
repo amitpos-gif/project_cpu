@@ -18,25 +18,25 @@ ENTITY Idecode IS
 	);
 	PORT(
 		--Inputs
-		clk_i						: IN 	STD_LOGIC;
-		rst_i						: IN 	STD_LOGIC;
+		clk_i				: IN 	STD_LOGIC;
+		rst_i				: IN 	STD_LOGIC;
 		pc_plus4_i			: IN	STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
-		instruction_i 	: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		dtcm_data_rd_i 	: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		alu_res_i				: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		RegDst_ctrl_i 	: IN 	STD_LOGIC;
-		RegWrite_ctrl_i : IN 	STD_LOGIC;
-		MemtoReg_ctrl_i : IN 	STD_LOGIC;
+		instruction_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		dtcm_data_rd_i 		: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		alu_res_i			: IN 	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		RegDst_ctrl_i 		: IN 	STD_LOGIC;
+		RegWrite_ctrl_i 	: IN 	STD_LOGIC;
+		MemtoReg_ctrl_i 	: IN 	STD_LOGIC;
 		-- Cascaded write-back mux controls from CONTROL
-		WBSrc0_ctrl_i	: IN  STD_LOGIC;
-		WBSrc1_ctrl_i	: IN  STD_LOGIC_VECTOR(1 DOWNTO 0);
+		WBSrc0_ctrl_i		: IN  STD_LOGIC;
+		WBSrc1_ctrl_i		: IN  STD_LOGIC_VECTOR(1 DOWNTO 0);
 		mul_res_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		quotient_i		: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		quotient_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
 		rem_i				: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		IRQ_clear_gie_i : IN  STD_LOGIC;
-		IRQ_set_gie_i   : IN  STD_LOGIC;
-		IRQ_save_tp_i   : IN  STD_LOGIC;
-		IRQ_return_pc_i : IN  STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
+		IRQ_clear_gie_i 	: IN  STD_LOGIC;
+		IRQ_set_gie_i   	: IN  STD_LOGIC;
+		IRQ_save_tp_i   	: IN  STD_LOGIC;
+		IRQ_return_pc_i 	: IN  STD_LOGIC_VECTOR(PC_WIDTH-1 DOWNTO 0);
 		
 		--Outputs
 		read_data1_o		: OUT	STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);

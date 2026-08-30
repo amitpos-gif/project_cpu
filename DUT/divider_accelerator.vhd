@@ -18,49 +18,46 @@ ENTITY divider_accelerator IS
 	);
 	PORT(
 		-- Inputs
-		ain_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		bin_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		divclk_i		: IN  STD_LOGIC;
-		divrst_i		: IN  STD_LOGIC;
-		divena_i		: IN  STD_LOGIC;
+		ain_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);  -- dividend
+		bin_i			: IN  STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);  -- divisor
+		divclk_i		: IN  STD_LOGIC;									-- CLK from the clock tree
+		divrst_i		: IN  STD_LOGIC;									-- reset signal (arms the start of a new divide)
+		divena_i		: IN  STD_LOGIC;									-- enable signal (starts the N-step divide operation)													
 
 		-- Outputs
-		quotient_o		: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		rem_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		divbusy_o		: OUT STD_LOGIC
+		quotient_o		: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- RESULT: quotient
+		rem_o			: OUT STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- RESULT: remainder
+		divbusy_o		: OUT STD_LOGIC										-- indication that we are still busy with the current divide operation
 	);
 END divider_accelerator;
 
 
 ARCHITECTURE behavior OF divider_accelerator IS
-	CONSTANT DOUBLE_WIDTH_C	: POSITIVE := 2 * DATA_BUS_WIDTH;
+	CONSTANT DOUBLE_WIDTH_C	: POSITIVE := 2 * DATA_BUS_WIDTH;   -- constant for the 64 bit load register
 
 	-- Upper half: partial remainder. Lower half: shifting dividend.
-	SIGNAL dividend_q	: STD_LOGIC_VECTOR(DOUBLE_WIDTH_C-1 DOWNTO 0);
-	SIGNAL divisor_q		: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL quotient_q	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-	SIGNAL count_q		: NATURAL RANGE 0 TO N-1;
-	SIGNAL busy_q		: STD_LOGIC;
+	SIGNAL dividend_q	: STD_LOGIC_VECTOR(DOUBLE_WIDTH_C-1 DOWNTO 0);  -- the 64 bit load register  [numers - 32bit | dividend - 32bit]
+	SIGNAL divisor_q	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- the divisor register
+	SIGNAL quotient_q	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- the quotient register
+	SIGNAL count_q		: NATURAL RANGE 0 TO N-1;						-- the iteration counter
+	SIGNAL busy_q		: STD_LOGIC;									-- the busy signal
+
 	-- DIVRST arms exactly one start. This prevents a level-held DIVENA from
 	-- restarting the completed divide before BUSY reaches MCLK.
 	SIGNAL armed_q		: STD_LOGIC;
 
 BEGIN
-	-- The supplied algorithm generates one result bit for every input bit.
-	ASSERT N = DATA_BUS_WIDTH
-		REPORT "divider_accelerator requires N = DATA_BUS_WIDTH"
-		SEVERITY FAILURE;
-
+	
 	PROCESS(divclk_i)
-		VARIABLE shifted_v	: STD_LOGIC_VECTOR(DOUBLE_WIDTH_C-1 DOWNTO 0);
-		VARIABLE upper_v	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
-		VARIABLE quotient_v	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);
+		VARIABLE shifted_v	: STD_LOGIC_VECTOR(DOUBLE_WIDTH_C-1 DOWNTO 0);	-- the shifted dividend register
+		VARIABLE upper_v	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- the upper half of the shifted dividend register
+		VARIABLE quotient_v	: STD_LOGIC_VECTOR(DATA_BUS_WIDTH-1 DOWNTO 0);	-- the shifted quotient register
 	BEGIN
 		IF rising_edge(divclk_i) THEN
 			IF divrst_i = '1' THEN
 				-- DIVRST initializes the core while loading the gray interface
 				-- registers: upper dividend=0, lower dividend=ain, divisor=bin.
-				dividend_q	<= (DATA_BUS_WIDTH-1 DOWNTO 0 => '0') & ain_i;
+				dividend_q	<= (DATA_BUS_WIDTH-1 DOWNTO 0 => '0') & ain_i;  -- this is the 64 bit load register
 				divisor_q		<= bin_i;
 				quotient_q	<= (OTHERS => '0');
 				count_q			<= 0;
@@ -82,8 +79,8 @@ BEGIN
 				quotient_v := quotient_q(DATA_BUS_WIDTH-2 DOWNTO 0) & '0';
 
 				-- Step 3: subtract/test and append the quotient bit.
-				IF upper_v >= divisor_q THEN
-					upper_v := upper_v - divisor_q;
+				IF upper_v >= divisor_q THEN  -- so we have a valid subtraction
+					upper_v := upper_v - divisor_q;  -- it is the actual subtraction
 					shifted_v(DOUBLE_WIDTH_C-1 DOWNTO DATA_BUS_WIDTH) := upper_v;
 					quotient_v(0) := '1';
 				END IF;

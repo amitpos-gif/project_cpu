@@ -11,10 +11,10 @@ entity clock_tree is
         rst_i      : in  std_logic;   -- asynchronous reset, active high
         baseclk_i  : in  std_logic;   -- 50 MHz board oscillator (CLOCK_50)
 
-        mclk_o     : out std_logic;   -- 25 MHz  CPU
-        accelclk_o : out std_logic;   -- 125 MHz divider accelerator
-        smclk_o    : out std_logic;   -- 50 MHz  peripherals
-        locked_o   : out std_logic    -- all three PLLs locked
+        mclk_o     : out std_logic;   --  CPU
+        accelclk_o : out std_logic;   --  divider accelerator
+        smclk_o    : out std_logic;   --  peripherals
+        locked_o   : out std_logic    --  all three PLLs locked
     );
 end entity clock_tree;
 
