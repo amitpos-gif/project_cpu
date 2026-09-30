@@ -1,1 +1,0 @@
-create_clock -name DIVCLK -period 10.000 [get_ports {divclk_i}]

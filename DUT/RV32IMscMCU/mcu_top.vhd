@@ -1,0 +1,216 @@
+
+library ieee;
+use ieee.std_logic_1164.all;
+use work.cond_compilation_package.all;
+-- RV32I_CORE's component declaration lives in aux_package (the project's
+-- central component registry), so it is not repeated here.
+use work.aux_package.all;
+
+entity mcu_top is
+    port (
+        rst_i    : in  std_logic;                     -- KEY0, System RESET
+        clk_i    : in  std_logic;                      -- baseclk 50MHz
+        divclk_i : in  std_logic;                      -- fast divider clock (Clock Tree/PLL not built yet - passed through)
+        -- Peripheral clock from the Clock Tree (Figure 1). Must be
+        -- synchronous and in phase with the CPU clock - gpio_peripherals
+        -- uses its low phase as the safe window for its D-latch writes.
+        smclk    : in  std_logic;
+
+        KEY1     : in  std_logic;
+        KEY2     : in  std_logic;
+        KEY3     : in  std_logic;
+        CAPIN1   : in  std_logic;
+        CAPIN2   : in  std_logic;
+        SW       : in  std_logic_vector(7 downto 0);    -- SW7-SW0
+        LEDR     : out std_logic_vector(7 downto 0);    -- LEDR7-LEDR0
+        PWM      : out std_logic;
+        HEX0     : out std_logic_vector(6 downto 0);
+        HEX1     : out std_logic_vector(6 downto 0);
+        HEX2     : out std_logic_vector(6 downto 0);
+        HEX3     : out std_logic_vector(6 downto 0);
+        HEX4     : out std_logic_vector(6 downto 0);
+        HEX5     : out std_logic_vector(6 downto 0)
+    );
+end entity mcu_top;
+
+architecture structural of mcu_top is
+
+    -- Signals tapped for the (stub) BUS Interface Logic
+    signal alu_res_w      : std_logic_vector(31 downto 0);
+    signal dtcm_data_wr_w : std_logic_vector(31 downto 0);
+    signal mem_write_w    : std_logic;
+    signal mem_read_w     : std_logic;
+
+    signal io_address_w   : std_logic_vector(13 downto 0);
+    signal io_data_w      : std_logic_vector(7 downto 0);  -- BidirPin's IOpin: the shared peripheral Data bus
+    signal io_data_rd_w   : std_logic_vector(7 downto 0);  -- BidirPin's Din: live readback of io_data_w
+    signal key_irq_w      : std_logic_vector(2 downto 0);
+    signal btcapr_w       : std_logic_vector(31 downto 0);
+    signal btifg_w        : std_logic;
+    signal peripheral_rd_w : std_logic_vector(31 downto 0);
+
+    -- CPU/interrupt-controller handshake wires.
+    signal gie_w          : std_logic;
+    signal inta_w         : std_logic;
+    signal intr_w         : std_logic;
+
+    -- Remaining RV32I_CORE outputs: not consumed by this stub, wired only
+    -- to keep the port map complete (mirrors the core's own Signal-Tap
+    -- verification outputs, per its header comment).
+    signal pc_w           : std_logic_vector(G_PC_WIDTH-1 downto 0);
+    signal instruction_w  : std_logic_vector(31 downto 0);
+    signal reg_write_w    : std_logic;
+    signal branch_w       : std_logic;
+    signal read_data1_w   : std_logic_vector(31 downto 0);
+    signal read_data2_w   : std_logic_vector(31 downto 0);
+    signal write_data_w   : std_logic_vector(31 downto 0);
+    signal brtaken_w      : std_logic;
+    signal dtcm_addr_w    : std_logic_vector(G_ADDRWIDTH-1 downto 0);
+    signal dtcm_data_rd_w : std_logic_vector(31 downto 0);
+    signal mclk_cnt_w     : std_logic_vector(15 downto 0);
+
+begin
+
+    ----------------------------------------------------------------
+    -- RISC-V core (Figure 1 "RISC-V core" box)
+    -- MODELSIM => 1 overrides the core's own default (0 = FPGA/PLL path)
+    -- so this wrapper simulates without needing Altera PLL simulation
+    -- models; revisit when this is actually compiled in Quartus.
+    ----------------------------------------------------------------
+    CORE : RV32I_CORE
+        generic map (
+            MODELSIM => 1
+        )
+        port map (
+            rst_i           => rst_i,
+            clk_i           => clk_i,
+            divclk_i        => divclk_i,
+            dtcm_data_rd_i  => peripheral_rd_w,
+            INTR_i          => intr_w,
+
+            pc_o            => pc_w,
+            instruction_o   => instruction_w,
+            RegWrite_ctrl_o => reg_write_w,
+            MemWrite_ctrl_o => mem_write_w,
+            MemRead_ctrl_o  => mem_read_w,
+            Branch_ctrl_o   => branch_w,
+            read_data1_o    => read_data1_w,
+            read_data2_o    => read_data2_w,
+            write_data_o    => write_data_w,
+            alu_res_o       => alu_res_w,
+            brTaken_o       => brtaken_w,
+            dtcm_addr_o     => dtcm_addr_w,
+            dtcm_data_wr_o  => dtcm_data_wr_w,
+            dtcm_data_rd_o  => dtcm_data_rd_w,
+            mclk_cnt_o      => mclk_cnt_w,
+            INTA_o          => inta_w,
+            GIE_o           => gie_w
+        );
+
+    ----------------------------------------------------------------
+    -- "BUS Interface Logic" (Figure 1): full byte address straight from
+    -- the ALU, and the "Bi-directional Data BUS" itself (BidirPin.vhd).
+    ----------------------------------------------------------------
+    io_address_w <= alu_res_w(13 downto 0);
+
+    DATA_BUS : BidirPin
+        generic map (
+            width => 8
+        )
+        port map (
+            Dout  => dtcm_data_wr_w(7 downto 0),
+            en    => mem_write_w,
+            Din   => io_data_rd_w,
+            IOpin => io_data_w
+        );
+
+    ----------------------------------------------------------------
+    -- Peripheral read return path.  The common peripheral bus is byte wide,
+    -- while BTCAPR is a 32-bit word register.  Its word read is therefore
+    -- selected directly; all byte-wide peripheral reads are zero extended.
+    ----------------------------------------------------------------
+    peripheral_rd_w <= btcapr_w
+                       WHEN mem_read_w = '1' AND
+                            io_address_w = "10000000101000" -- 0x2028
+                       ELSE x"000000" & io_data_rd_w;
+
+    ----------------------------------------------------------------
+    -- Peripherals (Figure 1 "Peripherals" box) - GPIO only (Table 5).
+    -- KEY[3-1] intentionally left out of this pass.
+    ----------------------------------------------------------------
+    GPIO : gpio_peripherals
+        port map (
+            smclk    => smclk,
+            Address  => io_address_w,
+            Data     => io_data_w,
+            MemRead  => mem_read_w,
+            MemWrite => mem_write_w,
+            SW       => SW,
+            LEDR     => LEDR,
+            HEX0     => HEX0,
+            HEX1     => HEX1,
+            HEX2     => HEX2,
+            HEX3     => HEX3,
+            HEX4     => HEX4,
+            HEX5     => HEX5
+        );
+
+    ----------------------------------------------------------------
+    -- KEY1-KEY3 peripheral (page 6): PORT_PB at 0x2014 and one-cycle
+    -- active-high press events for the future interrupt controller.
+    ----------------------------------------------------------------
+    PUSHBUTTONS : pushbutton_peripheral
+        port map (
+            smclk     => smclk,
+            rst_i     => rst_i,
+            Address   => io_address_w,
+            Data      => io_data_w,
+            MemRead   => mem_read_w,
+            KEY1      => KEY1,
+            KEY2      => KEY2,
+            KEY3      => KEY3,
+            key_irq_o => key_irq_w
+        );
+
+    ----------------------------------------------------------------
+    -- Basic Timer (pages 7-8).  Its writable registers are selected by its
+    -- internal address decoder.  BTCAPR is capture-only and is read above.
+    ----------------------------------------------------------------
+    BASIC_TIMER_UNIT : basic_timer_top
+        generic map (
+            N => 32
+        )
+        port map (
+            smclk_i     => smclk,
+            rst_i       => rst_i,
+            Address_i   => io_address_w,
+            WriteData_i => dtcm_data_wr_w,
+            MemWrite_i  => mem_write_w,
+            CAPIN1_i    => CAPIN1,
+            CAPIN2_i    => CAPIN2,
+            BTCAPR_o    => btcapr_w,
+            BTIFG_o     => btifg_w,
+            PWM_o       => PWM
+        );
+
+    ----------------------------------------------------------------
+    -- Interrupt Controller (pages 13-15).  It shares the byte-wide MMIO bus
+    -- with GPIO and the pushbuttons.  INTR, active-low INTA, and GIE close the
+    -- hardware handshake loop with the CPU.
+    ----------------------------------------------------------------
+    INTERRUPTS : interrupt_controller_top
+        port map (
+            smclk_i   => smclk,
+            rst_i     => rst_i,
+            Address   => io_address_w,
+            Data      => io_data_w,
+            MemRead   => mem_read_w,
+            MemWrite  => mem_write_w,
+            BTIFG_i   => btifg_w,
+            KEY_irq_i => key_irq_w,
+            GIE_i     => gie_w,
+            INTA_i    => inta_w,
+            INTR_o    => intr_w
+        );
+
+end architecture structural;
